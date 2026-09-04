@@ -1,0 +1,5 @@
+src/**
+out/test/**
+tsconfig.json
+.gitignore
+**/*.tsbuildinfo
