@@ -140,7 +140,9 @@ export default tseslint.config(
 	{
 		files: [
 			'src/vs/workbench/contrib/roboagent/**/*.{js,ts}',
+			'src/vs/platform/roboagentAuth/**/*.{js,ts}',
 			'extensions/roboagent-ros2/src/**/*.{js,ts}',
+			'extensions/copilot/src/extension/byok/vscode-node/roboAgentProvider.ts',
 		],
 		rules: {
 			'header/header': [

@@ -213,6 +213,9 @@
 		],
 		"github-enterprise": [
 			"GitHub.copilot-chat"
+		],
+		"roboagent": [
+			"GitHub.copilot-chat"
 		]
 	},
 	"onboardingKeymaps": [

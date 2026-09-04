@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { localize2 } from '../../../../nls.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
@@ -53,9 +52,10 @@ export class SignInAction extends Action2 {
 		try {
 			await authService.signIn();
 			notificationService.info('Successfully signed in to RoboAgent!');
-		} catch (e: any) {
-			if (e.message !== 'Sign in aborted') {
-				notificationService.error(`Sign in failed: ${e.message}`);
+		} catch (e) {
+			const message = e instanceof Error ? e.message : String(e);
+			if (message !== 'Sign in aborted') {
+				notificationService.error(`Sign in failed: ${message}`);
 			}
 		}
 	}
@@ -99,9 +99,10 @@ export class SignUpAction extends Action2 {
 		try {
 			await authService.signIn();
 			notificationService.info('Successfully signed in to RoboAgent!');
-		} catch (e: any) {
-			if (e.message !== 'Sign in aborted') {
-				notificationService.error(`Sign up failed: ${e.message}`);
+		} catch (e) {
+			const message = e instanceof Error ? e.message : String(e);
+			if (message !== 'Sign in aborted') {
+				notificationService.error(`Sign up failed: ${message}`);
 			}
 		}
 	}
@@ -134,8 +135,8 @@ export class SignOutAction extends Action2 {
 		try {
 			await authService.signOut();
 			notificationService.info('Successfully signed out of RoboAgent (your browser session is unaffected).');
-		} catch (e: any) {
-			notificationService.error(`Sign out failed: ${e.message}`);
+		} catch (e) {
+			notificationService.error(`Sign out failed: ${e instanceof Error ? e.message : String(e)}`);
 		}
 	}
 }
@@ -164,19 +165,9 @@ export function registerAuthActions() {
 	registerAction2(SignOutAction);
 	registerAction2(OpenDashboardAction);
 
-	// Programmatic bridges for extension-host code (notably the RoboAgent
-	// language-model provider inside the vendored Copilot chat extension,
-	// which authenticates gateway requests with the Supabase access token).
-	// Not Action2s: they must not show up in the command palette.
-	CommandsRegistry.registerCommand('roboagent.getAccessToken', async (accessor: ServicesAccessor) => {
-		const mainProcessService = accessor.get(IMainProcessService);
-		const authService = ProxyChannel.toService<IRoboAgentAuthMainService>(mainProcessService.getChannel('roboagentAuth'));
-		return authService.getAccessToken();
-	});
-
-	CommandsRegistry.registerCommand('roboagent.getAuthSession', async (accessor: ServicesAccessor) => {
-		const mainProcessService = accessor.get(IMainProcessService);
-		const authService = ProxyChannel.toService<IRoboAgentAuthMainService>(mainProcessService.getChannel('roboagentAuth'));
-		return authService.getSession();
-	});
+	// Extension-host code (the RoboAgent language-model provider in the chat
+	// extension) obtains the access token through `vscode.authentication`,
+	// served by RoboAgentAuthenticationProvider - deliberately NOT through a
+	// command: commands can be executed by any installed extension and would
+	// leak the token; the authentication service enforces per-extension access.
 }

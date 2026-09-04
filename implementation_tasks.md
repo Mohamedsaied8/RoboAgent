@@ -8,6 +8,33 @@ plain `git commit` works from here on; `--no-verify` is no longer needed.
 
 ---
 
+## Security & code review — PR #1 `llm-gateway-integration` (2026-09-04)
+
+Reviewed https://github.com/Mohamedsaied8/RoboAgent/pull/1 (1 commit, 11 files) for leaked
+secrets and defects; fixes committed on the PR branch. Secret scan (key/JWT/private-key/.env
+patterns over the diff and the whole branch tree): **clean** - the only credential-shaped value
+in the tree is `product.json` `supabaseAnonKey`, a Supabase *publishable* key (public by design,
+pre-existing on main). Design notes in `requirements_docs/roboagent_llm_gateway_integration.md`.
+
+| # | Finding (file) | Severity | Fix |
+|---|---|---|---|
+| S1 | `roboagent.getAccessToken` registered as a workbench command: **any installed extension** can `executeCommand` it and read (and keep refreshing) the user's Supabase access token (`roboagentAuthCommands.ts`, `roboAgentProvider.ts`) | HIGH | ☑ replaced by `RoboAgentAuthenticationProvider` (workbench `IAuthenticationService` provider `roboagent`); chat ext uses `vscode.authentication.getSession('roboagent', [], { silent: true })`; `product.json` `trustedExtensionAuthAccess.roboagent = [GitHub.copilot-chat]`; other extensions get the consent prompt. Commands removed. |
+| S2 | `roboagent.getAuthSession` command exposed identity (userId/email) the same way | LOW | ☑ removed (account label is in the auth session) |
+| S3 | Dead `extensions/roboagent-authentication` prototype: never compiled (not in gulp compilations, no `out/`), token passed in a callback-URL query, and it declares the same `roboagent` provider id - would collide with S1's fix and shows a broken "Sign in with RoboAgent" entry | MEDIUM | ☑ deleted (no references elsewhere) |
+| F1 | `chatMLFetcher` refused to send ("key is missing") when neither `secretKey` nor a Copilot token existed; the PR only "worked" because `chat.allowAnonymousAccess` (default true) mints an **anonymous Copilot token from GitHub** on every RoboAgent request | HIGH | ☑ client-side BYOK endpoints (`isBYOKModel()===1`) use `secretKey=''` (their `getExtraHeaders()` Authorization wins) and no longer call `getCopilotToken()` |
+| F2 | 402 handler `await getCopilotToken()` unguarded → a gateway "allowance exhausted" reply throws `GitHubLoginFailed` instead of a quota error | MEDIUM | ☑ best-effort refresh (`.catch`) |
+| F3 | `endpointProviderImpl` catch-all swallowed **every** family-lookup error (CAPI outage, network) for real Copilot users and returned a synthetic `vendor: copilot` model | MEDIUM | ☑ rethrow when a Copilot token exists; synthetic fallback only without one |
+| F4 | `/models` response not status-checked → 401/5xx surfaced as "Unexpected response" | LOW | ☑ `response.ok` check with HTTP status in the error |
+| F5 | `handleTokenResponse`: missing `expires_in` → NaN expiry + zero-delay refresh loop | LOW | ☑ default 3600s guard |
+| H1 | `header/header` lint errors on `platform/roboagentAuth/**` and the copilot `roboAgentProvider.ts` (RoboAgent copyright outside the fork's override globs) | LOW | ☑ globs added to `eslint.config.js` |
+| H2 | PR commit authored as `root <root@srv1198174.hstgr.cloud>` (VPS hostname, no author identity) | INFO | ⚠ needs a decision: amend author + force-push the branch, or leave |
+| H3 | Gateway base URL hardcoded in the extension (non-secret; duplicates `WEB_BASE` in core) | INFO | ☐ optional follow-up: read from product.json |
+
+Tests added: `contrib/roboagent/test/browser/roboagentAuthProvider.test.ts` (9) and a
+`getAccessToken` signed-out test in `platform/roboagentAuth/test/electron-main/`.
+
+---
+
 ## REQ-5 — ROS2 Communication Graph View (Priority: HIGH)
 
 Spec: `requirements_docs/roboagent_req_ros2_graph_view.md`. Renders the REQ-2 communication

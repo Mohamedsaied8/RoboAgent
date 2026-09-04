@@ -75,7 +75,12 @@ export class ProductionEndpointProvider extends Disposable implements IEndpointP
 				// token. With only a RoboAgent (Supabase) session, callers such as
 				// prompt-tsx rendering still ask for 'copilot-base' purely for
 				// tokenizer/limit metadata — return a synthetic endpoint so they
-				// keep working; it never serves an actual CAPI request.
+				// keep working. Only when there is no Copilot token, though: for a
+				// signed-in Copilot user the failure is real (network, CAPI outage)
+				// and must surface instead of silently routing to a fake model.
+				if (this._authService.copilotToken) {
+					throw e;
+				}
 				this._logService.warn(`getChatEndpoint('${requestOrFamilyOrModel}') failed without Copilot auth — using synthetic fallback`);
 				return this.getOrCreateChatEndpointInstance({
 					id: 'roboagent-fallback',

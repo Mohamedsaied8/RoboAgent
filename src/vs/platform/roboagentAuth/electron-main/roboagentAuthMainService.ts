@@ -15,7 +15,7 @@ import { IURLService } from '../../url/common/url.js';
 import { INativeHostMainService } from '../../native/electron-main/nativeHostMainService.js';
 import { URI } from '../../../base/common/uri.js';
 import { AuthStorageService, IStoredSessionData } from './storage.js';
-import { AuthExchangeService, ITokenResponse } from './exchange.js';
+import { AuthExchangeService, ExchangeError, ITokenResponse } from './exchange.js';
 import { LoopbackServer, IActiveLoopback, ILoopbackResult } from './loopback.js';
 import { constantTimeEqual, generateCodeChallenge, generateCodeVerifier, generateState } from './pkce.js';
 import { AUTH_TIMEOUT_MS, TOKEN_REFRESH_MARGIN_MS, WEB_BASE } from '../common/authConstants.js';
@@ -38,7 +38,7 @@ export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAu
 	private _session: IRoboAgentAuthSession = { isSignedIn: false };
 	private _accessToken: string | undefined;
 	private _accessTokenExpiresAt: number | undefined;
-	private _refreshTimer: NodeJS.Timeout | undefined;
+	private _refreshTimer: ReturnType<typeof setTimeout> | undefined;
 	private _activeSignIn: IActiveSignIn | undefined;
 	private _refreshPromise: Promise<void> | undefined;
 
@@ -155,7 +155,7 @@ export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAu
 			loopbackServer = await loopback.listen();
 			this._activeSignIn = { ...this._activeSignIn, loopbackServer };
 			redirectUri = `http://127.0.0.1:${loopbackServer.port}/callback`;
-			
+
 			// Hook up the loopback promise to our overall result promise
 			loopbackServer.promise.then(
 				(res) => resultResolve!(res),
@@ -163,10 +163,10 @@ export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAu
 			);
 		} catch (e) {
 			this.logService.warn('RoboAgentAuthMainService#signIn: Loopback failed, falling back to deep-link', e);
-			
+
 			// 2. Fallback to deep-link
 			redirectUri = `${this.productService.urlProtocol}://auth/callback`;
-			
+
 			deepLinkRegistration = this.urlService.registerHandler({
 				handleURL: async (uri: URI, options?: { originalUrl?: string }) => {
 					if (uri.path === '/callback' && uri.authority === 'auth') {
@@ -175,7 +175,7 @@ export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAu
 						const returnedState = queryParams.get('state') || undefined;
 						const error = queryParams.get('error') || undefined;
 						const error_description = queryParams.get('error_description') || undefined;
-						
+
 						this._activeSignIn?.resolveCallback({ code, state: returnedState, error, error_description });
 						return true; // handled
 					}
@@ -239,17 +239,21 @@ export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAu
 			clearTimeout(this._refreshTimer);
 			this._refreshTimer = undefined;
 		}
-		
+
 		await this.storageService.clear();
 		this._onDidChangeSession.fire(this._session);
 	}
 
 	private async handleTokenResponse(response: ITokenResponse): Promise<void> {
+		// Supabase always sends expires_in (3600s); guard anyway so a missing
+		// value cannot turn into a NaN expiry and a zero-delay refresh loop.
+		const expiresInMs = (typeof response.expires_in === 'number' && isFinite(response.expires_in) && response.expires_in > 0 ? response.expires_in : 3600) * 1000;
+
 		this._accessToken = response.access_token;
-		this._accessTokenExpiresAt = Date.now() + response.expires_in * 1000;
+		this._accessTokenExpiresAt = Date.now() + expiresInMs;
 
 		const displayName = response.user.user_metadata?.full_name || response.user.email;
-		
+
 		this._session = {
 			isSignedIn: true,
 			userId: response.user.id,
@@ -270,12 +274,11 @@ export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAu
 			clearTimeout(this._refreshTimer);
 		}
 
-		const expiresInMs = response.expires_in * 1000;
 		const refreshInMs = Math.max(0, expiresInMs - TOKEN_REFRESH_MARGIN_MS);
-		
+
 		this._refreshTimer = setTimeout(() => {
 			this.refreshAccessToken();
-		}, refreshInMs) as any;
+		}, refreshInMs);
 
 		this._onDidChangeSession.fire(this._session);
 	}
@@ -304,8 +307,8 @@ export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAu
 
 		try {
 			await this.refreshAccessToken(storedData.refreshToken);
-		} catch (e: any) {
-			if (e.name === 'ExchangeError' && (e.statusCode === 400 || e.statusCode === 401)) {
+		} catch (e) {
+			if (e instanceof ExchangeError && (e.statusCode === 400 || e.statusCode === 401)) {
 				this.logService.warn('RoboAgentAuthMainService#tryRestoreSession: Refresh token rejected, clearing session');
 				await this.clearSession();
 			} else {
@@ -342,8 +345,8 @@ export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAu
 		try {
 			const tokenResponse = await this.exchangeService.refreshAccessToken(refreshTokenToUse);
 			await this.handleTokenResponse(tokenResponse);
-		} catch (e: any) {
-			if (e.name === 'ExchangeError' && (e.statusCode === 400 || e.statusCode === 401)) {
+		} catch (e) {
+			if (e instanceof ExchangeError && (e.statusCode === 400 || e.statusCode === 401)) {
 				this.logService.warn('RoboAgentAuthMainService#doRefreshAccessToken: Refresh rejected, clearing session');
 				await this.clearSession();
 			}

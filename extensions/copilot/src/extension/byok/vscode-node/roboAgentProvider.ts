@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { commands } from 'vscode';
+import { authentication } from 'vscode';
 import { IConfigurationService } from '../../../platform/configuration/common/configurationService';
 import { ILogService } from '../../../platform/log/common/logService';
 import { IFetcherService } from '../../../platform/networking/common/fetcherService';
@@ -17,13 +17,21 @@ import { IBYOKStorageService } from './byokStorageService';
 /**
  * RoboAgent's own model provider. Models are served by the RoboAgent LLM
  * gateway (an OpenAI-compatible proxy in front of NVIDIA), and requests are
- * authorized with the user's RoboAgent (Supabase) session via the core
- * `roboagent.getAccessToken` command — no API key is ever entered or stored
- * in the IDE. Unlike the BYOK providers this is registered unconditionally:
- * it must work without any GitHub/Copilot sign-in.
+ * authorized with the user's RoboAgent (Supabase) session, obtained through
+ * the workbench's `roboagent` authentication provider — no API key is ever
+ * entered or stored in the IDE. Unlike the BYOK providers this is registered
+ * unconditionally: it must work without any GitHub/Copilot sign-in.
  */
 
 const GATEWAY_BASE = 'https://www.roboticscorner.tech/roboagent/api/llm';
+/**
+ * Id of the workbench-side RoboAgent authentication provider. Sessions are
+ * requested through `vscode.authentication`, so the workbench decides who may
+ * read the token: this extension is pre-trusted via product.json
+ * (`trustedExtensionAuthAccess.roboagent`); any other extension gets the
+ * standard consent prompt.
+ */
+const ROBOAGENT_AUTH_PROVIDER_ID = 'roboagent';
 // The gateway caps completions at 8192 tokens and rejects prompts above
 // ~200k tokens of text; stay inside a 128k window with output headroom.
 const MAX_INPUT_TOKENS = 120_000;
@@ -57,7 +65,10 @@ export class RoboAgentLMProvider extends AbstractOpenAICompatibleLMProvider {
 
 	private async getAccessToken(): Promise<string | undefined> {
 		try {
-			return await commands.executeCommand<string | undefined>('roboagent.getAccessToken');
+			// silent: never pop a sign-in UI from inside a model request; the
+			// user signs in through "RoboAgent: Log In" or the Accounts menu.
+			const session = await authentication.getSession(ROBOAGENT_AUTH_PROVIDER_ID, [], { silent: true });
+			return session?.accessToken;
 		} catch (e) {
 			this._logService.warn(`RoboAgent: could not obtain access token: ${e}`);
 			return undefined;
@@ -86,6 +97,9 @@ export class RoboAgentLMProvider extends AbstractOpenAICompatibleLMProvider {
 				headers: { 'Authorization': `Bearer ${token}` },
 				callSite: 'roboagent-models',
 			});
+			if (!response.ok) {
+				throw new Error(`RoboAgent gateway returned HTTP ${response.status} while listing models`);
+			}
 			const data = await response.json() as { models?: IGatewayModel[] };
 			if (!Array.isArray(data.models)) {
 				throw new Error('Unexpected response from the RoboAgent gateway');

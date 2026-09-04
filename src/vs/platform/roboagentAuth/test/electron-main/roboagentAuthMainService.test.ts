@@ -13,14 +13,18 @@ import { IURLService } from '../../../url/common/url.js';
 import { INativeHostMainService } from '../../../native/electron-main/nativeHostMainService.js';
 import { RoboAgentAuthMainService } from '../../electron-main/roboagentAuthMainService.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
+import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 
 suite('RoboAgent Auth Main Service', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
 	let authService: RoboAgentAuthMainService;
 
 	setup(() => {
 		const logService = new NullLogService();
 		const productService = { supabaseAnonKey: 'test-key', urlProtocol: 'roboagent' } as unknown as IProductService;
-		
+
 		const fileService = {
 			exists: async () => false,
 			readFile: async () => { throw new Error('Not implemented'); },
@@ -41,7 +45,7 @@ suite('RoboAgent Auth Main Service', () => {
 		} as unknown as IEnvironmentMainService;
 
 		const urlService = {
-			registerHandler: () => ({ dispose: () => {} } as IDisposable)
+			registerHandler: () => ({ dispose: () => { } } as IDisposable)
 		} as unknown as IURLService;
 
 		const nativeHostService = {
@@ -66,6 +70,11 @@ suite('RoboAgent Auth Main Service', () => {
 	test('getSession initially returns not signed in', async () => {
 		const session = await authService.getSession();
 		assert.strictEqual(session.isSignedIn, false);
+	});
+
+	test('getAccessToken returns undefined while signed out (no refresh attempted)', async () => {
+		const token = await authService.getAccessToken();
+		assert.strictEqual(token, undefined);
 	});
 
 	// The flow test involving HTTP intercepts is complex and better suited to integration tests

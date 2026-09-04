@@ -5,6 +5,35 @@ Per-requirement context, scope, files, and verification. Task status lives in
 
 ---
 
+## LLM Gateway Integration — PR #1 security/code review (2026-09-04)
+
+**Context.** PR #1 (`llm-gateway-integration`) wires IDE chat to the RoboAgent LLM gateway using the
+user's RoboAgent (Supabase) session. Reviewed for exposed secrets and defects; all fixes landed on
+the PR branch. Findings table in `implementation_tasks.md`; design in
+`requirements_docs/roboagent_llm_gateway_integration.md`.
+
+**Key change - how the token reaches the extension.** The PR bridged the main-process auth service to
+the chat extension with a public command (`roboagent.getAccessToken`). Commands have no caller
+identity, so any installed extension could read the token. Replaced with the platform mechanism:
+
+- `browser/roboagentAuthProvider.ts` (new) - `RoboAgentAuthenticationProvider`, a workbench
+  contribution (`BlockRestore`) implementing `IAuthenticationProvider` for id `roboagent` over the
+  existing `roboagentAuth` ProxyChannel; sessions are built per call from `getSession()` +
+  `getAccessToken()` (never cached), `createSession` = browser sign-in, `removeSession` = sign-out,
+  main-process changes mirrored as added/changed/removed events.
+- `product.json` - `trustedExtensionAuthAccess.roboagent: ["GitHub.copilot-chat"]`.
+- `extensions/copilot/.../roboAgentProvider.ts` - `vscode.authentication.getSession('roboagent', [],
+  { silent: true })`.
+- `extensions/roboagent-authentication/` removed (dead prototype declaring the same provider id).
+
+**Chat without GitHub.** `chatMLFetcher` treats client-side BYOK endpoints as self-authenticating
+(placeholder `secretKey`, no `getCopilotToken()` call), so RoboAgent chat no longer depends on the
+anonymous-Copilot path; the `copilot-base` synthetic fallback applies only when no Copilot token exists.
+
+**Verification.** Core tsc, copilot-extension tsc, eslint (0 errors) and `scripts/test.sh --grep
+RoboAgent` - see the task board for the run record. Manual matrix (incl. the new "third-party
+extension gets a consent prompt" case) is in the requirements doc.
+
 ## REQ-5 — ROS2 Communication Graph View (HIGH)
 
 **Spec:** `requirements_docs/roboagent_req_ros2_graph_view.md`

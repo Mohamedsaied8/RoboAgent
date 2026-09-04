@@ -26,6 +26,7 @@ import { Ros2PackageExplorerView } from './ros2PackageExplorerView.js';
 import { Ros2StatusBar } from './ros2StatusBar.js';
 import { IndexRos2WorkspaceAction, registerRoboAgentActions } from './ros2WorkspaceActions.js';
 import { RoboAgentAuthStatusBar } from './roboagentAuthStatusBar.js';
+import { RoboAgentAuthenticationProvider } from './roboagentAuthProvider.js';
 import { registerAuthActions, SignInAction, SignUpAction } from './roboagentAuthCommands.js';
 // --- Service ---------------------------------------------------------------
 
@@ -128,3 +129,10 @@ registerWorkbenchContribution2(Ros2StatusBar.ID, Ros2StatusBar, WorkbenchPhase.A
 // --- Auth status bar -------------------------------------------------------
 
 registerWorkbenchContribution2(RoboAgentAuthStatusBar.ID, RoboAgentAuthStatusBar, WorkbenchPhase.AfterRestored);
+
+// --- Auth provider (vscode.authentication bridge for extensions) -----------
+// Registered before restore so it exists by the time the extension host asks
+// for a 'roboagent' session; access is gated by product.json
+// `trustedExtensionAuthAccess` / user consent, never by a public command.
+
+registerWorkbenchContribution2(RoboAgentAuthenticationProvider.ID, RoboAgentAuthenticationProvider, WorkbenchPhase.BlockRestore);

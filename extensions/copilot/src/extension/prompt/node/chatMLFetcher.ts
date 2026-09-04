@@ -217,11 +217,22 @@ export class ChatMLFetcherImpl extends AbstractChatMLFetcher {
 			} else {
 				let tokenCountPromise: Promise<number> | undefined;
 				const countTokens = () => tokenCountPromise ??= chatEndpoint.acquireTokenizer().countMessagesTokens(messages);
-				// RoboAgent: no Copilot token is required for non-Copilot endpoints
-				// (roboagent gateway / BYOK bring their own auth) — the token here
-				// only feeds username scrubbing and CAPI fallbacks.
-				const copilotToken = await this._authenticationService.getCopilotToken().catch(() => undefined);
-				usernameToScrub = copilotToken?.username;
+				// RoboAgent: client-side BYOK endpoints (OpenAIEndpoint, e.g. the
+				// RoboAgent gateway, or extension-contributed) send their own
+				// Authorization header from getExtraHeaders(); the Copilot token
+				// only feeds username scrubbing for them. Do not even ask for one:
+				// without a GitHub session getCopilotToken() would otherwise mint
+				// an anonymous token from GitHub (or fail with telemetry noise) on
+				// every RoboAgent request. CAPI endpoints still need the token,
+				// but a missing one is reported below as a failed result instead
+				// of throwing.
+				let copilotToken: CopilotToken | undefined;
+				if (isBYOKModel(chatEndpoint) === 1) {
+					usernameToScrub = this._authenticationService.copilotToken?.username;
+				} else {
+					copilotToken = await this._authenticationService.getCopilotToken().catch(() => undefined);
+					usernameToScrub = copilotToken?.username;
+				}
 
 				const fetchResult = await this._fetchAndStreamChat(
 					chatEndpoint,
@@ -1020,7 +1031,13 @@ export class ChatMLFetcherImpl extends AbstractChatMLFetcher {
 			this._logService.debug(`chat model ${chatEndpointInfo.model}`);
 
 			secretKey ??= copilotToken?.token;
-			if (!secretKey) {
+			if (secretKey === undefined && isBYOKModel(chatEndpointInfo) === 1) {
+				// RoboAgent: the endpoint supplies its own Authorization header via
+				// getExtraHeaders(), which overrides the one built from secretKey,
+				// so a Copilot token is only a placeholder here (see fetchMany).
+				secretKey = '';
+			}
+			if (secretKey === undefined) {
 				// If no key is set we error
 				const urlOrRequestMetadata = stringifyUrlOrRequestMetadata(chatEndpointInfo.urlOrRequestMetadata);
 				this._logService.error(`Failed to send request to ${urlOrRequestMetadata} due to missing key`);
@@ -1614,7 +1631,10 @@ export class ChatMLFetcherImpl extends AbstractChatMLFetcher {
 				// This is stored on the token so let's refresh it
 				if (!this._authenticationService.copilotToken?.isChatQuotaExceeded) {
 					this._authenticationService.resetCopilotToken(response.status);
-					await this._authenticationService.getCopilotToken();
+					// RoboAgent: a 402 can also come from the RoboAgent gateway (plan
+					// allowance exhausted) with no Copilot token at all; refreshing
+					// is best-effort and must not turn a quota error into an auth throw.
+					await this._authenticationService.getCopilotToken().catch(() => undefined);
 				}
 
 
