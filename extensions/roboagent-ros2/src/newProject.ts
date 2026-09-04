@@ -14,6 +14,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
+import { BACK, inputStep, pickStep } from './modes/wizardSteps';
 import { TARGET_DATABASE, getTarget, TargetDefinition } from './targets/targetDatabase';
 import { onPath } from './util';
 
@@ -35,9 +36,6 @@ interface WizardState {
 	env?: Env;
 	targetId?: string;
 }
-
-/** Sentinel returned by a step when the user pressed Back. */
-const BACK = Symbol('back');
 
 /**
  * The high-level domain catalog — the same data-driven shape as the low-level
@@ -92,10 +90,10 @@ async function runWizard(context: vscode.ExtensionContext): Promise<void> {
 	while (true) {
 		switch (step) {
 			case 'control': {
-				const pick = await pickStep<ControlLevel>('New Project — Control Level', 1, [
+				const pick = await pickStep<ControlLevel>({ title: 'New Project — Control Level', step: 1 }, [
 					{ label: '$(dashboard) High-Level Control', description: 'Autonomy, perception, NLP — ROS2 / OpenCV / NLP', value: 'high' },
 					{ label: '$(circuit-board) Low-Level Control', description: 'Microcontroller firmware — STM32 / ESP32', value: 'low' },
-				], false);
+				]);
 				if (pick === undefined) { return; }        // cancelled
 				if (pick === BACK) { return; }              // first step: back == cancel
 				state.controlLevel = pick;
@@ -103,8 +101,8 @@ async function runWizard(context: vscode.ExtensionContext): Promise<void> {
 				break;
 			}
 			case 'domain': {
-				const pick = await pickStep<Domain>('New Project — Domain', 2,
-					DOMAIN_DATABASE.map(d => ({ label: d.label, description: d.description, value: d.id })), true);
+				const pick = await pickStep<Domain>({ title: 'New Project — Domain', step: 2, canGoBack: true },
+					DOMAIN_DATABASE.map(d => ({ label: d.label, description: d.description, value: d.id })));
 				if (pick === undefined) { return; }
 				if (pick === BACK) { step = 'control'; break; }
 				state.domain = pick;
@@ -112,11 +110,11 @@ async function runWizard(context: vscode.ExtensionContext): Promise<void> {
 				break;
 			}
 			case 'env': {
-				const pick = await pickStep<Env>('New Project — Environment', 3, [
+				const pick = await pickStep<Env>({ title: 'New Project — Environment', step: 3, canGoBack: true }, [
 					{ label: '$(vm) On Host', description: 'Build and run on this machine', value: 'host' },
 					{ label: '$(remote) On Target', description: 'Remote device (future deploy)', value: 'target' },
 					{ label: '$(server) VM', description: 'Virtual machine', value: 'vm' },
-				], true);
+				]);
 				if (pick === undefined) { return; }
 				if (pick === BACK) { step = 'domain'; break; }
 				state.env = pick;
@@ -129,7 +127,7 @@ async function runWizard(context: vscode.ExtensionContext): Promise<void> {
 					description: t.description,
 					value: t.id,
 				}));
-				const pick = await pickStep<string>('New Project — Target', 2, items, true);
+				const pick = await pickStep<string>({ title: 'New Project — Target', step: 2, canGoBack: true }, items);
 				if (pick === undefined) { return; }
 				if (pick === BACK) { step = 'control'; break; }
 				state.targetId = pick;
@@ -137,12 +135,14 @@ async function runWizard(context: vscode.ExtensionContext): Promise<void> {
 				break;
 			}
 			case 'nameLocation': {
-				const enteredName = await inputStep(
-					'New Project — Name',
-					state.controlLevel === 'high' ? 4 : 3,
-					'Project name (used as the folder and, for ROS2, the package name)',
-					name ?? '',
-					v => (/^[A-Za-z][\w-]*$/.test(v.trim()) ? undefined : 'Use a letter followed by letters, digits, _ or -'));
+				const enteredName = await inputStep({
+					title: 'New Project — Name',
+					step: state.controlLevel === 'high' ? 4 : 3,
+					prompt: 'Project name (used as the folder and, for ROS2, the package name)',
+					value: name ?? '',
+					canGoBack: true,
+					validate: v => (/^[A-Za-z][\w-]*$/.test(v.trim()) ? undefined : 'Use a letter followed by letters, digits, _ or -'),
+				});
 				if (enteredName === undefined) { return; }          // Escape cancels the wizard
 				if (enteredName === BACK) {
 					step = state.controlLevel === 'high' ? 'env' : 'target';
@@ -163,55 +163,6 @@ async function runWizard(context: vscode.ExtensionContext): Promise<void> {
 			}
 		}
 	}
-}
-
-interface StepItem<T> extends vscode.QuickPickItem { value: T }
-
-/** Show a text-entry step with a Back button. Resolves to the value | BACK | undefined(cancel). */
-function inputStep(title: string, stepNo: number, prompt: string, value: string, validate: (v: string) => string | undefined): Promise<string | typeof BACK | undefined> {
-	return new Promise(resolve => {
-		const ib = vscode.window.createInputBox();
-		ib.title = title;
-		ib.step = stepNo;
-		ib.prompt = prompt;
-		ib.value = value;
-		ib.ignoreFocusOut = true;
-		ib.buttons = [vscode.QuickInputButtons.Back];
-		let done = false;
-		ib.onDidChangeValue(v => { ib.validationMessage = validate(v); });
-		ib.onDidTriggerButton(b => {
-			if (b === vscode.QuickInputButtons.Back) { done = true; resolve(BACK); ib.hide(); }
-		});
-		ib.onDidAccept(() => {
-			const message = validate(ib.value);
-			if (message) { ib.validationMessage = message; return; }
-			done = true; resolve(ib.value); ib.hide();
-		});
-		ib.onDidHide(() => { if (!done) { resolve(undefined); } ib.dispose(); });
-		ib.show();
-	});
-}
-
-/** Show one step as a QuickPick with an optional Back button. Resolves to value | BACK | undefined(cancel). */
-function pickStep<T>(title: string, stepNo: number, items: StepItem<T>[], canGoBack: boolean): Promise<T | typeof BACK | undefined> {
-	return new Promise(resolve => {
-		const qp = vscode.window.createQuickPick<StepItem<T>>();
-		qp.title = title;
-		qp.step = stepNo;
-		qp.items = items;
-		qp.ignoreFocusOut = true;
-		qp.buttons = canGoBack ? [vscode.QuickInputButtons.Back] : [];
-		let done = false;
-		qp.onDidTriggerButton(b => {
-			if (b === vscode.QuickInputButtons.Back) { done = true; resolve(BACK); qp.hide(); }
-		});
-		qp.onDidAccept(() => {
-			const sel = qp.selectedItems[0];
-			if (sel) { done = true; resolve(sel.value); qp.hide(); }
-		});
-		qp.onDidHide(() => { if (!done) { resolve(undefined); } qp.dispose(); });
-		qp.show();
-	});
 }
 
 async function scaffoldAndOpen(context: vscode.ExtensionContext, state: WizardState, name: string, parent: vscode.Uri): Promise<void> {

@@ -5,6 +5,45 @@ Per-requirement context, scope, files, and verification. Task status lives in
 
 ---
 
+## REQ-6 — Mode selector + Create / Build / Debug toolbar (2026-09-04)
+
+**Context.** One toolbar, three toolchains. A **Mode** (`stm32 | esp32 | ros2`) chooses what
+**Create**, **Build** and **Debug** do; the ESP-IDF extension ships built-in and the STM32 debug
+stack is installed on first use. User-facing description in `docs/modes.md`; the bundling and
+licensing research (why ST's extension is neither vendored nor auto-installed) in `docs/extensions.md`.
+
+**Where things live.**
+- Core: `contrib/roboagent/browser/roboagentModeToolbar.ts` (+ `media/roboagentModeToolbar.css`) —
+  four `Action2`s in `MenuId.TitleBarAdjacentCenter` forwarding to extension commands (the
+  Package-Explorer forwarding pattern), rendered through `IActionViewItemService` so Create is a
+  real `--vscode-button-background` button and Mode a `Mode: STM32 ▾` label; enablement/labels
+  come from the extension's context keys. `product.json`: `builtInExtensions` += ESP-IDF 2.2.0.
+- Extension `extensions/roboagent-ros2/src/modes/`: `modeService.ts` (state, keys, status bar,
+  auto-detect + Undo), `modeProvider.ts` (strategy interface), `modeHost.ts` / `vscodeModeHost.ts`
+  (tasks, terminals, debug, messages — the seam the tests fake), `detect.ts`, `scaffold.ts`,
+  `toolchains.ts`, `wizardSteps.ts` (lifted from `newProject.ts`, now shared), `modeCommands.ts`,
+  `bundledExtensions.ts`, `output.ts`; per mode `stm32/` (`mcuDatabase.ts`, `generator.ts`,
+  `stm32ModeProvider.ts`, `ensureExtension.ts`), `esp32/`, `ros2/` (each `generator.ts` +
+  provider). Generators are pure (spec → files) and unit-tested; providers are thin.
+- Tests: `src/test/*.test.ts` — run with `npm run test-unit` (tsc emit + mocha, Node only, no
+  Electron); `vscodeStub.ts` hooks `require('vscode')`, `fakeHost.ts` records side effects.
+
+**Decisions.**
+- Toolbar home: the title bar's center-adjacent slot (always present with the custom title bar,
+  room for a text button) rather than `editor/title` (icon-only, per-editor).
+- `Ctrl+Alt+D` for Debug — `Ctrl+Shift+D` is the Run and Debug view. `Ctrl+Shift+B` is only
+  taken over while `roboagent.modeProjectPresent`.
+- STM32 MCU data is a typed TS module (`mcuDatabase.ts`), not a runtime JSON file: same data,
+  type-checked, importable by tests; adding a part is still a data edit.
+- ESP-IDF 2.x keeps almost no `idf.*` workspace settings (setups moved to EIM), so generated
+  `.vscode/settings.json` records `roboagent.*` keys and the chip is pinned via `sdkconfig.defaults`.
+- ROS2 Build/Debug resolve the colcon root from the workspace folder; seeding `findColconRoot()`
+  from the active file returns the package directory (it has a `package.xml`).
+
+**Verification.** Core tsc, extension tsc, eslint (0 warnings on new files), unit + smoke tests
+(the smoke test compiles the STM32 skeletons with the installed `arm-none-eabi-gcc`); see the
+task board. E2E in the live app is the remaining item (6.12).
+
 ## REQ-5 — ROS2 Communication Graph View (HIGH)
 
 **Spec:** `requirements_docs/roboagent_req_ros2_graph_view.md`

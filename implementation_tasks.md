@@ -8,6 +8,35 @@ plain `git commit` works from here on; `--no-verify` is no longer needed.
 
 ---
 
+## REQ-6 — Mode selector + Create / Build / Debug toolbar, bundled toolchain extensions (2026-09-04)
+
+Branch `modes-toolbar` (off `main`). Spec = the user brief (STM32 / ESP32 / ROS2 modes, title-bar
+toolbar, bundled ESP-IDF + STM32 first-run installer). Design + manual test matrix in
+`docs/modes.md`; bundling/licensing decision in `docs/extensions.md`.
+
+| # | Task | Status |
+|---|------|--------|
+| 6.1 | Bundle `espressif.esp-idf-extension@2.2.0` (Apache-2.0) as a built-in (`product.json`, sha256 from Open VSX; dev sync verified) | ☑ |
+| 6.2 | STM32: ST's extension is SLA0048 + MS-Marketplace-only → not vendorable; `roboagent.stm32.ensureExtension` installs Cortex-Debug (MIT) from Open VSX on first STM32 selection; log-only startup check (`bundledExtensions.ts`) | ☑ |
+| 6.3 | Mode model + ModeService (`workspaceState` → `globalState` → `roboagent.mode` setting; context keys `roboagent.mode` / `roboagent.modeProjectPresent`; status-bar item; QuickPick; auto-detect on open with Undo) | ☑ |
+| 6.4 | Title-bar toolbar in core (`contrib/roboagent/browser/roboagentModeToolbar.ts`, `MenuId.TitleBarAdjacentCenter`, custom view items: `Mode: X ▾`, primary-styled **Create**, icon Build/Debug with `(mode)` tooltips, precondition on project presence) | ☑ |
+| 6.5 | `ModeProvider` strategy + `ModeHost` side-effect abstraction (`modeProvider.ts`, `modeHost.ts`, `vscodeModeHost.ts`); pure `detect.ts`, `scaffold.ts` (temp-dir → atomic move), `toolchains.ts` | ☑ |
+| 6.6 | STM32: MCU catalog (13 families / 37 parts + free text), CMake/Makefile generator with per-core flags, linker/startup stubs, .vscode configs; Build task + `$roboagent-gcc`; Debug via Cortex-Debug → cppdbg+OpenOCD → installer | ☑ |
+| 6.7 | ESP32: chip picker, hello_world/blink templates or ESP-IDF extension wizard, `sdkconfig.defaults` + `set-target`; Build via `espIdf.buildDevice` / `idf.py build`; Debug via `gdbtarget` → flash+monitor | ☑ |
+| 6.8 | ROS2: workspace/package/build-type/deps wizard, `ros2 pkg create` in scratch dir + launch file + atomic move + re-index (offline generator fallback); Build = existing colcon line, package-scoped, `ROS_DISTRO` from setting; Debug = pick built node → `roboagent.debugNode` | ☑ |
+| 6.9 | Commands/keybindings/settings (`roboagent.selectMode|create|build|debug`, `roboagent.<mode>.*`; `Ctrl+Shift+B` when a mode project is present; `Ctrl+Alt+D` — `Ctrl+Shift+D` is taken by the Run and Debug view) | ☑ |
+| 6.10 | Unit tests (mocha under Node, `vscode` stub + `FakeHost`): detection, MCU db, 3 generators, scaffold, toolchains, providers; smoke test builds the STM32 skeletons with the real `arm-none-eabi-gcc` when present | ☑ |
+| 6.11 | Docs: `docs/modes.md`, `docs/extensions.md`, README section; trackers | ☑ |
+| 6.12 | E2E in the live dev app (toolbar rendering in both themes, wizard flows) | ☐ |
+
+Verification: core tsc clean; extension tsc + eslint clean; `npm run test-unit` in
+`extensions/roboagent-ros2` (unit + smoke). The smoke test found two real generator bugs on its
+first run — CMake `$<CONFIG>` lists need `;` separators, and `CMAKE_EXECUTABLE_SUFFIX_C` doubled
+the `.elf` suffix — and the provider tests caught `findColconRoot()` resolving to the *package*
+when seeded from the active file. All fixed.
+
+---
+
 ## REQ-5 — ROS2 Communication Graph View (Priority: HIGH)
 
 Spec: `requirements_docs/roboagent_req_ros2_graph_view.md`. Renders the REQ-2 communication

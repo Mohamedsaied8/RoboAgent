@@ -23,6 +23,22 @@ RoboAgent is a **desktop-native, AI-powered IDE purpose-built for robotics, embe
 
 Generic AI coding assistants understand code *syntax* but not robotics *semantics*. They can't reason about TF trees, diagnose DDS QoS mismatches, explain why a Nav2 planner is failing, or correlate sensor timing issues across a distributed ROS2 graph. **RoboAgent closes that gap.**
 
+## Mode-aware toolbar: Create · Build · Debug
+
+RoboAgent's title bar carries a **Mode** selector (**STM32 / ESP32 / ROS2**) and three buttons
+whose behaviour follows the mode:
+
+| | STM32 | ESP32 | ROS2 |
+|---|---|---|---|
+| **Create** | CMake/Makefile firmware or library for any STM32 part (bundled MCU catalog, correct `-mcpu/-mfpu/-mfloat-abi`, linker + startup stubs) | ESP-IDF project for `esp32`…`esp32h2` (`sdkconfig.defaults`, `idf.py set-target`) | `ros2 pkg create` with build type + dependencies, launch file, instant re-index |
+| **Build** | `arm-none-eabi-gcc` via CMake/Make, errors in Problems | `espIdf.buildDevice` or `idf.py build` | `colcon build --symlink-install` (package-scoped) |
+| **Debug** | Cortex-Debug / OpenOCD, cpptools fallback | ESP-IDF `gdbtarget`, flash + monitor fallback | debugpy / lldb-dap on a built node |
+
+The mode is auto-detected when a folder opens (`.ioc` → STM32, `sdkconfig` → ESP32,
+`package.xml` → ROS2) and remembered per workspace. The **ESP-IDF** extension ships built-in;
+STM32 debugging installs **Cortex-Debug** on first use (ST's own extension cannot be
+redistributed — see [docs/extensions.md](docs/extensions.md)). Full details: [docs/modes.md](docs/modes.md).
+
 ## Why RoboAgent?
 
 | Pain | RoboAgent |

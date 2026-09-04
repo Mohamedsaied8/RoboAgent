@@ -1,0 +1,81 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) RoboAgent. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* The Mode | Create | Build | Debug group next to the command center (MenuId.TitleBarAdjacentCenter). */
+
+.monaco-workbench .part.titlebar .center-adjacent-toolbar-container .action-item .roboagent-toolbar-item {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	height: 22px;
+	padding: 0 8px;
+	margin: 0 1px;
+	box-sizing: border-box;
+	border-radius: var(--vscode-cornerRadius-medium, 4px);
+	border: 1px solid transparent;
+	white-space: nowrap;
+	font-size: var(--vscode-bodyFontSize-small, 12px);
+	color: var(--vscode-titleBar-activeForeground);
+	cursor: pointer;
+	-webkit-app-region: no-drag;
+}
+
+.monaco-workbench .part.titlebar .center-adjacent-toolbar-container .action-item .roboagent-toolbar-item:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.monaco-workbench .part.titlebar .center-adjacent-toolbar-container .action-item .roboagent-toolbar-item .codicon {
+	font-size: 16px;
+}
+
+/* Mode: text label + chevron, reads like a dropdown. */
+.monaco-workbench .part.titlebar .center-adjacent-toolbar-container .action-item .roboagent-toolbar-item.mode {
+	padding-right: 4px;
+	font-weight: 600;
+}
+
+.monaco-workbench .part.titlebar .center-adjacent-toolbar-container .action-item .roboagent-toolbar-item.mode .codicon-chevron-down {
+	font-size: 12px;
+	opacity: 0.8;
+}
+
+/* Create: the primary action — theme button colours, taller and wider than an icon button. */
+.monaco-workbench .part.titlebar .center-adjacent-toolbar-container .action-item .roboagent-toolbar-item.create {
+	height: 24px;
+	padding: 0 12px 0 9px;
+	margin: 0 6px 0 4px;
+	font-weight: 600;
+	color: var(--vscode-button-foreground);
+	background-color: var(--vscode-button-background);
+	border-color: var(--vscode-button-border, var(--vscode-button-background));
+}
+
+.monaco-workbench .part.titlebar .center-adjacent-toolbar-container .action-item .roboagent-toolbar-item.create:hover {
+	background-color: var(--vscode-button-hoverBackground);
+	border-color: var(--vscode-button-hoverBackground);
+}
+
+.monaco-workbench .part.titlebar .center-adjacent-toolbar-container .action-item .roboagent-toolbar-item.create .codicon {
+	color: var(--vscode-button-foreground);
+}
+
+/* Build / Debug: icon buttons; disabled when no project of the current mode is present. */
+.monaco-workbench .part.titlebar .center-adjacent-toolbar-container .action-item .roboagent-toolbar-item.icon {
+	padding: 0 4px;
+}
+
+.monaco-workbench .part.titlebar .center-adjacent-toolbar-container .action-item.disabled .roboagent-toolbar-item {
+	opacity: 0.45;
+	cursor: default;
+}
+
+.monaco-workbench .part.titlebar .center-adjacent-toolbar-container .action-item.disabled .roboagent-toolbar-item:hover {
+	background-color: transparent;
+}
+
+.monaco-workbench .part.titlebar .center-adjacent-toolbar-container .action-item .roboagent-toolbar-item:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}

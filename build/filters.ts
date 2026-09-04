@@ -113,6 +113,9 @@ export const indentationFilter = Object.freeze<string[]>([
 	// project scaffolds copied verbatim into the user's new project: they follow their own
 	// ecosystem's conventions (PEP 8 spaces for Python, spaces for ROS2 XML/CMake/ini)
 	'!extensions/roboagent-ros2/templates/**',
+	// Mode generators embed C / CMake / Python / linker-script text in template literals; that text
+	// keeps its own (space) indentation, exactly like the scaffold templates above.
+	'!extensions/roboagent-ros2/src/modes/**/generator.ts',
 	// parser tests embed real package.xml / setup.py / CMakeLists.txt fixtures as template
 	// literals; those must keep the indentation their own languages use
 	'!src/vs/workbench/contrib/roboagent/test/**',

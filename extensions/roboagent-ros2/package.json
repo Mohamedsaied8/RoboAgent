@@ -24,30 +24,199 @@
 	},
 	"scripts": {
 		"compile": "gulp compile-extension:roboagent-ros2",
-		"watch": "gulp watch-extension:roboagent-ros2"
+		"watch": "gulp watch-extension:roboagent-ros2",
+		"test-unit": "node ../../node_modules/typescript/bin/tsc -p ./tsconfig.json && node ../../node_modules/mocha/bin/mocha --ui tdd --timeout 20000 \"out/test/**/*.test.js\""
 	},
 	"contributes": {
 		"commands": [
-			{ "command": "roboagent.newProject", "title": "%command.newProject%", "category": "RoboAgent", "icon": "$(add)" },
-			{ "command": "roboagent.colconBuild", "title": "%command.colconBuild%", "category": "RoboAgent", "icon": "$(package)" },
-			{ "command": "roboagent.colconBuildPackage", "title": "%command.colconBuildPackage%", "category": "RoboAgent", "icon": "$(package)" },
-			{ "command": "roboagent.colconTest", "title": "%command.colconTest%", "category": "RoboAgent", "icon": "$(beaker)" },
-			{ "command": "roboagent.colconClean", "title": "%command.colconClean%", "category": "RoboAgent", "icon": "$(trash)" },
-			{ "command": "roboagent.runLaunch", "title": "%command.runLaunch%", "category": "RoboAgent", "icon": "$(play)" },
-			{ "command": "roboagent.stopLaunch", "title": "%command.stopLaunch%", "category": "RoboAgent", "icon": "$(debug-stop)" },
-			{ "command": "roboagent.runNode", "title": "%command.runNode%", "category": "RoboAgent", "icon": "$(play)" },
-			{ "command": "roboagent.debugNode", "title": "%command.debugNode%", "category": "RoboAgent", "icon": "$(debug-alt)" },
-			{ "command": "roboagent.buildFile", "title": "%command.buildFile%", "category": "RoboAgent", "icon": "$(tools)" },
-			{ "command": "roboagent.runFile", "title": "%command.runFile%", "category": "RoboAgent", "icon": "$(play)" },
-			{ "command": "roboagent.cmakeConfigure", "title": "%command.cmakeConfigure%", "category": "RoboAgent", "icon": "$(gear)" },
-			{ "command": "roboagent.cmakeBuild", "title": "%command.cmakeBuild%", "category": "RoboAgent", "icon": "$(tools)" },
-			{ "command": "roboagent.cmakeRun", "title": "%command.cmakeRun%", "category": "RoboAgent", "icon": "$(play)" },
-			{ "command": "roboagent.cmakeClean", "title": "%command.cmakeClean%", "category": "RoboAgent", "icon": "$(trash)" }
+			{
+				"command": "roboagent.newProject",
+				"title": "%command.newProject%",
+				"category": "RoboAgent",
+				"icon": "$(add)"
+			},
+			{
+				"command": "roboagent.colconBuild",
+				"title": "%command.colconBuild%",
+				"category": "RoboAgent",
+				"icon": "$(package)"
+			},
+			{
+				"command": "roboagent.colconBuildPackage",
+				"title": "%command.colconBuildPackage%",
+				"category": "RoboAgent",
+				"icon": "$(package)"
+			},
+			{
+				"command": "roboagent.colconTest",
+				"title": "%command.colconTest%",
+				"category": "RoboAgent",
+				"icon": "$(beaker)"
+			},
+			{
+				"command": "roboagent.colconClean",
+				"title": "%command.colconClean%",
+				"category": "RoboAgent",
+				"icon": "$(trash)"
+			},
+			{
+				"command": "roboagent.runLaunch",
+				"title": "%command.runLaunch%",
+				"category": "RoboAgent",
+				"icon": "$(play)"
+			},
+			{
+				"command": "roboagent.stopLaunch",
+				"title": "%command.stopLaunch%",
+				"category": "RoboAgent",
+				"icon": "$(debug-stop)"
+			},
+			{
+				"command": "roboagent.runNode",
+				"title": "%command.runNode%",
+				"category": "RoboAgent",
+				"icon": "$(play)"
+			},
+			{
+				"command": "roboagent.debugNode",
+				"title": "%command.debugNode%",
+				"category": "RoboAgent",
+				"icon": "$(debug-alt)"
+			},
+			{
+				"command": "roboagent.buildFile",
+				"title": "%command.buildFile%",
+				"category": "RoboAgent",
+				"icon": "$(tools)"
+			},
+			{
+				"command": "roboagent.runFile",
+				"title": "%command.runFile%",
+				"category": "RoboAgent",
+				"icon": "$(play)"
+			},
+			{
+				"command": "roboagent.cmakeConfigure",
+				"title": "%command.cmakeConfigure%",
+				"category": "RoboAgent",
+				"icon": "$(gear)"
+			},
+			{
+				"command": "roboagent.cmakeBuild",
+				"title": "%command.cmakeBuild%",
+				"category": "RoboAgent",
+				"icon": "$(tools)"
+			},
+			{
+				"command": "roboagent.cmakeRun",
+				"title": "%command.cmakeRun%",
+				"category": "RoboAgent",
+				"icon": "$(play)"
+			},
+			{
+				"command": "roboagent.cmakeClean",
+				"title": "%command.cmakeClean%",
+				"category": "RoboAgent",
+				"icon": "$(trash)"
+			},
+			{
+				"command": "roboagent.selectMode",
+				"title": "%command.selectMode%",
+				"category": "RoboAgent",
+				"icon": "$(circuit-board)"
+			},
+			{
+				"command": "roboagent.create",
+				"title": "%command.create%",
+				"category": "RoboAgent",
+				"icon": "$(add)"
+			},
+			{
+				"command": "roboagent.build",
+				"title": "%command.build%",
+				"category": "RoboAgent",
+				"icon": "$(tools)"
+			},
+			{
+				"command": "roboagent.debug",
+				"title": "%command.debug%",
+				"category": "RoboAgent",
+				"icon": "$(debug-alt)"
+			},
+			{
+				"command": "roboagent.stm32.ensureExtension",
+				"title": "%command.stm32.ensureExtension%",
+				"category": "RoboAgent"
+			},
+			{
+				"command": "roboagent.stm32.create",
+				"title": "%command.stm32.create%",
+				"category": "RoboAgent",
+				"icon": "$(add)"
+			},
+			{
+				"command": "roboagent.stm32.build",
+				"title": "%command.stm32.build%",
+				"category": "RoboAgent",
+				"icon": "$(tools)"
+			},
+			{
+				"command": "roboagent.stm32.debug",
+				"title": "%command.stm32.debug%",
+				"category": "RoboAgent",
+				"icon": "$(debug-alt)"
+			},
+			{
+				"command": "roboagent.esp32.create",
+				"title": "%command.esp32.create%",
+				"category": "RoboAgent",
+				"icon": "$(add)"
+			},
+			{
+				"command": "roboagent.esp32.build",
+				"title": "%command.esp32.build%",
+				"category": "RoboAgent",
+				"icon": "$(tools)"
+			},
+			{
+				"command": "roboagent.esp32.debug",
+				"title": "%command.esp32.debug%",
+				"category": "RoboAgent",
+				"icon": "$(debug-alt)"
+			},
+			{
+				"command": "roboagent.ros2.create",
+				"title": "%command.ros2.create%",
+				"category": "RoboAgent",
+				"icon": "$(add)"
+			},
+			{
+				"command": "roboagent.ros2.build",
+				"title": "%command.ros2.build%",
+				"category": "RoboAgent",
+				"icon": "$(tools)"
+			},
+			{
+				"command": "roboagent.ros2.debug",
+				"title": "%command.ros2.debug%",
+				"category": "RoboAgent",
+				"icon": "$(debug-alt)"
+			}
 		],
 		"menus": {
 			"commandPalette": [
-				{ "command": "roboagent.runNode", "when": "false" },
-				{ "command": "roboagent.debugNode", "when": "false" }
+				{
+					"command": "roboagent.runNode",
+					"when": "false"
+				},
+				{
+					"command": "roboagent.debugNode",
+					"when": "false"
+				},
+				{
+					"command": "roboagent.stm32.ensureExtension",
+					"when": "roboagent.mode == stm32"
+				}
 			],
 			"editor/title": [
 				{
@@ -87,21 +256,77 @@
 		"taskDefinitions": [
 			{
 				"type": "colcon",
-				"required": ["mode"],
+				"required": [
+					"mode"
+				],
 				"properties": {
-					"mode": { "type": "string", "enum": ["build", "test", "clean"], "description": "%taskdef.colcon.mode%" },
-					"packages": { "type": "array", "items": { "type": "string" }, "description": "%taskdef.colcon.packages%" }
+					"mode": {
+						"type": "string",
+						"enum": [
+							"build",
+							"test",
+							"clean"
+						],
+						"description": "%taskdef.colcon.mode%"
+					},
+					"packages": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"description": "%taskdef.colcon.packages%"
+					}
 				}
 			},
-			{ "type": "roboagent-cpp", "required": [], "properties": {} },
-			{ "type": "roboagent-cmake", "required": [], "properties": {} }
+			{
+				"type": "roboagent-cpp",
+				"required": [],
+				"properties": {}
+			},
+			{
+				"type": "roboagent-cmake",
+				"required": [],
+				"properties": {}
+			},
+			{
+				"type": "roboagent-mode",
+				"required": [
+					"name"
+				],
+				"properties": {
+					"name": {
+						"type": "string",
+						"description": "%taskdef.mode.name%"
+					}
+				}
+			}
 		],
 		"problemMatchers": [
 			{
 				"name": "colcon",
 				"owner": "colcon",
 				"source": "colcon",
-				"fileLocation": ["autoDetect", "${workspaceFolder}"],
+				"fileLocation": [
+					"autoDetect",
+					"${workspaceFolder}"
+				],
+				"pattern": {
+					"regexp": "^(.*?):(\\d+):(\\d+):\\s+(?:fatal\\s+)?(warning|error|note):\\s+(.*)$",
+					"file": 1,
+					"line": 2,
+					"column": 3,
+					"severity": 4,
+					"message": 5
+				}
+			},
+			{
+				"name": "roboagent-gcc",
+				"owner": "roboagent",
+				"source": "gcc",
+				"fileLocation": [
+					"autoDetect",
+					"${workspaceFolder}"
+				],
 				"pattern": {
 					"regexp": "^(.*?):(\\d+):(\\d+):\\s+(?:fatal\\s+)?(warning|error|note):\\s+(.*)$",
 					"file": 1,
@@ -116,14 +341,34 @@
 			{
 				"type": "roboagent-ros2-python",
 				"label": "%debugger.python.label%",
-				"languages": ["python"],
+				"languages": [
+					"python"
+				],
 				"configurationAttributes": {
 					"launch": {
 						"properties": {
-							"program": { "type": "string", "description": "%debugger.python.program%" },
-							"args": { "type": "array", "description": "%debugger.args%", "default": [] },
-							"cwd": { "type": "string", "description": "%debugger.cwd%" },
-							"console": { "type": "string", "enum": ["internalConsole", "integratedTerminal", "externalTerminal"], "default": "integratedTerminal" }
+							"program": {
+								"type": "string",
+								"description": "%debugger.python.program%"
+							},
+							"args": {
+								"type": "array",
+								"description": "%debugger.args%",
+								"default": []
+							},
+							"cwd": {
+								"type": "string",
+								"description": "%debugger.cwd%"
+							},
+							"console": {
+								"type": "string",
+								"enum": [
+									"internalConsole",
+									"integratedTerminal",
+									"externalTerminal"
+								],
+								"default": "integratedTerminal"
+							}
 						}
 					}
 				},
@@ -155,13 +400,26 @@
 			{
 				"type": "roboagent-ros2-cpp",
 				"label": "%debugger.cpp.label%",
-				"languages": ["cpp", "c"],
+				"languages": [
+					"cpp",
+					"c"
+				],
 				"configurationAttributes": {
 					"launch": {
 						"properties": {
-							"program": { "type": "string", "description": "%debugger.cpp.program%" },
-							"args": { "type": "array", "description": "%debugger.args%", "default": [] },
-							"cwd": { "type": "string", "description": "%debugger.cwd%" }
+							"program": {
+								"type": "string",
+								"description": "%debugger.cpp.program%"
+							},
+							"args": {
+								"type": "array",
+								"description": "%debugger.args%",
+								"default": []
+							},
+							"cwd": {
+								"type": "string",
+								"description": "%debugger.cwd%"
+							}
 						}
 					}
 				},
@@ -201,40 +459,131 @@
 						"id": "roboagent.createProject",
 						"title": "%walkthrough.createProject.title%",
 						"description": "%walkthrough.createProject.description%",
-						"media": { "markdown": "walkthroughs/createProject.md" },
-						"completionEvents": ["onCommand:roboagent.newProject"]
+						"media": {
+							"markdown": "walkthroughs/createProject.md"
+						},
+						"completionEvents": [
+							"onCommand:roboagent.newProject"
+						]
 					},
 					{
 						"id": "roboagent.indexWorkspace",
 						"title": "%walkthrough.indexWorkspace.title%",
 						"description": "%walkthrough.indexWorkspace.description%",
-						"media": { "markdown": "walkthroughs/index.md" },
-						"completionEvents": ["onCommand:roboagent.indexRos2Workspace"]
+						"media": {
+							"markdown": "walkthroughs/index.md"
+						},
+						"completionEvents": [
+							"onCommand:roboagent.indexRos2Workspace"
+						]
 					},
 					{
 						"id": "roboagent.buildWorkspace",
 						"title": "%walkthrough.buildWorkspace.title%",
 						"description": "%walkthrough.buildWorkspace.description%",
-						"media": { "markdown": "walkthroughs/build.md" },
-						"completionEvents": ["onCommand:roboagent.colconBuild"]
+						"media": {
+							"markdown": "walkthroughs/build.md"
+						},
+						"completionEvents": [
+							"onCommand:roboagent.colconBuild"
+						]
 					},
 					{
 						"id": "roboagent.runLaunchStep",
 						"title": "%walkthrough.runLaunch.title%",
 						"description": "%walkthrough.runLaunch.description%",
-						"media": { "markdown": "walkthroughs/run.md" },
-						"completionEvents": ["onCommand:roboagent.runLaunch"]
+						"media": {
+							"markdown": "walkthroughs/run.md"
+						},
+						"completionEvents": [
+							"onCommand:roboagent.runLaunch"
+						]
 					},
 					{
 						"id": "roboagent.exploreGraph",
 						"title": "%walkthrough.exploreGraph.title%",
 						"description": "%walkthrough.exploreGraph.description%",
-						"media": { "markdown": "walkthroughs/explore.md" },
-						"completionEvents": ["onCommand:roboagent.ros2PackageExplorer.focus", "onCommand:roboagent.showRos2Graph"]
+						"media": {
+							"markdown": "walkthroughs/explore.md"
+						},
+						"completionEvents": [
+							"onCommand:roboagent.ros2PackageExplorer.focus",
+							"onCommand:roboagent.showRos2Graph"
+						]
 					}
 				]
 			}
-		]
+		],
+		"keybindings": [
+			{
+				"command": "roboagent.build",
+				"key": "ctrl+shift+b",
+				"mac": "cmd+shift+b",
+				"when": "roboagent.modeProjectPresent"
+			},
+			{
+				"command": "roboagent.debug",
+				"key": "ctrl+alt+d",
+				"mac": "cmd+alt+d",
+				"when": "roboagent.modeProjectPresent"
+			}
+		],
+		"configuration": {
+			"title": "RoboAgent",
+			"properties": {
+				"roboagent.mode": {
+					"type": "string",
+					"enum": [
+						"stm32",
+						"esp32",
+						"ros2"
+					],
+					"enumDescriptions": [
+						"%config.mode.stm32%",
+						"%config.mode.esp32%",
+						"%config.mode.ros2%"
+					],
+					"default": "ros2",
+					"scope": "window",
+					"markdownDescription": "%config.mode%"
+				},
+				"roboagent.stm32.toolchainPath": {
+					"type": "string",
+					"default": "",
+					"scope": "machine-overridable",
+					"markdownDescription": "%config.stm32.toolchainPath%"
+				},
+				"roboagent.stm32.openocdInterface": {
+					"type": "string",
+					"default": "stlink",
+					"enum": [
+						"stlink",
+						"jlink",
+						"cmsis-dap"
+					],
+					"scope": "resource",
+					"markdownDescription": "%config.stm32.openocdInterface%"
+				},
+				"roboagent.esp32.idfPath": {
+					"type": "string",
+					"default": "",
+					"scope": "machine-overridable",
+					"markdownDescription": "%config.esp32.idfPath%"
+				},
+				"roboagent.esp32.port": {
+					"type": "string",
+					"default": "",
+					"scope": "resource",
+					"markdownDescription": "%config.esp32.port%"
+				},
+				"roboagent.ros2.distro": {
+					"type": "string",
+					"default": "",
+					"scope": "machine-overridable",
+					"markdownDescription": "%config.ros2.distro%"
+				}
+			}
+		}
 	},
 	"repository": {
 		"type": "git",
