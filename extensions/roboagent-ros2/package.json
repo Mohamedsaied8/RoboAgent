@@ -149,6 +149,11 @@
 				"category": "RoboAgent"
 			},
 			{
+				"command": "roboagent.stm32.ensureToolchain",
+				"title": "%command.stm32.ensureToolchain%",
+				"category": "RoboAgent"
+			},
+			{
 				"command": "roboagent.stm32.create",
 				"title": "%command.stm32.create%",
 				"category": "RoboAgent",
@@ -165,6 +170,11 @@
 				"title": "%command.stm32.debug%",
 				"category": "RoboAgent",
 				"icon": "$(debug-alt)"
+			},
+			{
+				"command": "roboagent.esp32.ensureIdf",
+				"title": "%command.esp32.ensureIdf%",
+				"category": "RoboAgent"
 			},
 			{
 				"command": "roboagent.esp32.create",
@@ -216,6 +226,14 @@
 				{
 					"command": "roboagent.stm32.ensureExtension",
 					"when": "roboagent.mode == stm32"
+				},
+				{
+					"command": "roboagent.stm32.ensureToolchain",
+					"when": "roboagent.mode == stm32"
+				},
+				{
+					"command": "roboagent.esp32.ensureIdf",
+					"when": "roboagent.mode == esp32"
 				}
 			],
 			"editor/title": [

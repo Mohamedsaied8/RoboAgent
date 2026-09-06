@@ -28,8 +28,10 @@ put its `sha256sum` in the entry, and run `npm run download-builtin-extensions` 
 release build. The entry's `metadata` ids come from Open VSX's gallery `extensionquery`.
 
 Note: an ESP-IDF *toolchain* (the `esp-idf` checkout, Python env, compilers) is **not** part of
-the extension; the extension's *ESP-IDF: Configure extension* / install manager sets it up, or
-point `roboagent.esp32.idfPath` at an existing checkout.
+the extension; the ESP-IDF Installation Manager (EIM, *ESP-IDF: Open ESP-IDF Installation
+Manager*) sets it up, or point `roboagent.esp32.idfPath` at an existing checkout. RoboAgent
+checks for one before every ESP32 Create / Build / Debug and offers those two options when none
+is found (`roboagent.esp32.ensureIdf`, see `docs/modes.md` → *ESP-IDF check*).
 
 ## Startup check
 

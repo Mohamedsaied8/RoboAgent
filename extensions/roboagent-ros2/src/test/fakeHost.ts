@@ -17,8 +17,11 @@ export class FakeHost implements ModeHost {
 	readonly installed = new Set<string>();
 	readonly tools = new Set<string>();
 	readonly settings = new Map<string, unknown>();
+	readonly opened: string[] = [];
 	/** Title of the message action to auto-pick (simulates the user clicking it). */
 	autoPick: string | undefined;
+	/** What `pickFolder` returns (simulates the folder dialog). */
+	folderToPick: string | undefined;
 	taskExitCode: number | undefined = 0;
 	debugStarts = true;
 
@@ -42,6 +45,15 @@ export class FakeHost implements ModeHost {
 	}
 	getSetting<T>(key: string): T | undefined {
 		return this.settings.get(key) as T | undefined;
+	}
+	async updateSetting(key: string, value: unknown): Promise<void> {
+		this.settings.set(key, value);
+	}
+	async pickFolder(): Promise<string | undefined> {
+		return this.folderToPick;
+	}
+	async openExternal(url: string): Promise<void> {
+		this.opened.push(url);
 	}
 	async toolOnPath(tool: string): Promise<boolean> {
 		return this.tools.has(tool);

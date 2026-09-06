@@ -23,8 +23,10 @@ licensing research (why ST's extension is neither vendored nor auto-installed) i
   (tasks, terminals, debug, messages — the seam the tests fake), `detect.ts`, `scaffold.ts`,
   `toolchains.ts`, `wizardSteps.ts` (lifted from `newProject.ts`, now shared), `modeCommands.ts`,
   `bundledExtensions.ts`, `output.ts`; per mode `stm32/` (`mcuDatabase.ts`, `generator.ts`,
-  `stm32ModeProvider.ts`, `ensureExtension.ts`), `esp32/`, `ros2/` (each `generator.ts` +
-  provider). Generators are pure (spec → files) and unit-tested; providers are thin.
+  `stm32ModeProvider.ts`, `ensureExtension.ts`, `ensureToolchain.ts` — the host-tool presence
+  check + package-manager installer offer), `esp32/` (`generator.ts`, provider,
+  `ensureIdf.ts` — the ESP-IDF presence check + installer offer), `ros2/` (each `generator.ts`
+  + provider). Generators are pure (spec → files) and unit-tested; providers are thin.
 - Tests: `src/test/*.test.ts` — run with `npm run test-unit` (tsc emit + mocha, Node only, no
   Electron); `vscodeStub.ts` hooks `require('vscode')`, `fakeHost.ts` records side effects.
 
@@ -39,6 +41,26 @@ licensing research (why ST's extension is neither vendored nor auto-installed) i
   `.vscode/settings.json` records `roboagent.*` keys and the chip is pinned via `sdkconfig.defaults`.
 - ROS2 Build/Debug resolve the colcon root from the workspace folder; seeding `findColconRoot()`
   from the active file returns the package directory (it has a `package.xml`).
+- ESP-IDF presence (2026-09-07): the extension is bundled but the toolchain is not, so ESP32
+  Create / Build / Debug call `ensureEspIdf()` first and stop (Build/Debug) or ask (Create) when
+  nothing is installed. `discoverEspIdf()` in `toolchains.ts` reads the same sources ESP-IDF
+  extension 2.x does — `idf.currentSetup` and the EIM registry `eim_idf.json` (object or array
+  `idfInstalled`, selected id first) — plus setting / `$IDF_PATH` / `~/esp` / `~/.espressif`, so
+  a toolchain installed through the extension is never reported missing. The installer offered
+  is EIM via the extension's `espIdf.installManager` (it downloads and launches EIM); RoboAgent
+  ships no download code of its own. `ModeHost` grew `updateSetting` / `pickFolder` /
+  `openExternal` so the *Use Existing Install…* path is unit-testable through `FakeHost`.
+- STM32 toolchain presence (2026-09-07): same shape for the host tools (`stm32/ensureToolchain.ts`).
+  Requirements are per purpose — Create: compiler; Build: compiler + cmake/make; Debug: openocd +
+  a GDB — so nobody is blocked on a tool the action does not use. "Install" means the machine's
+  package manager (apt / dnf / pacman / Homebrew, detected on PATH) run in a visible terminal
+  with only the missing packages (Ubuntu's `gcc-arm-none-eabi` ships no GDB, hence
+  `gdb-multiarch`; Homebrew's compiler+GDB is the `gcc-arm-embedded` cask); without one, the
+  Arm download page. The GDB actually found (`arm-none-eabi-gdb` beside the compiler, on PATH,
+  or `gdb-multiarch`) is passed to Cortex-Debug (`gdbPath` / `armToolchainPath`) and cppdbg
+  (`miDebuggerPath`); a `toolchainPath` setting without a compiler is ignored instead of
+  producing a failing build. The old "no debugger → offer Cortex-Debug" branch in Debug is gone:
+  a GDB is now a precondition, and Cortex-Debug is still offered on mode selection.
 
 **Verification.** Core tsc, extension tsc, eslint (0 warnings on new files), unit + smoke tests
 (the smoke test compiles the STM32 skeletons with the installed `arm-none-eabi-gcc`); see the

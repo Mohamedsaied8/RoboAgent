@@ -5,7 +5,9 @@
 
 /*---------------------------------------------------------------------------------------------
  *  RoboAgent — STM32 mode: Create (wizard → CMake/Makefile project), Build (arm-none-eabi-gcc
- *  task with the gcc problem matcher), Debug (Cortex-Debug → cpptools/OpenOCD fallback).
+ *  task with the gcc problem matcher), Debug (Cortex-Debug → cpptools/OpenOCD fallback). All
+ *  three first make sure the tools they need are installed (`ensureToolchain.ts`) and offer to
+ *  install them when they are not.
  *--------------------------------------------------------------------------------------------*/
 
 import * as fs from 'fs';
@@ -16,11 +18,10 @@ import { detectStm32 } from '../detect';
 import { ModeHost } from '../modeHost';
 import { ModeProvider } from '../modeProvider';
 import { materialize, ScaffoldError, toIdentifier } from '../scaffold';
-import { discoverArmToolchainDir } from '../toolchains';
 import { BACK, inputStep, pickFolder, pickOrTypeStep, pickStep, StepResult, validateProjectName } from '../wizardSteps';
-import { generateStm32Project, openocdArgs, stm32BuildCommands, Stm32ProjectKind, Stm32ProjectSpec, stm32LaunchConfigurations, Stm32Toolchain } from './generator';
+import { ensureStm32Toolchain } from './ensureToolchain';
+import { generateStm32Project, stm32BuildCommands, Stm32ProjectKind, Stm32ProjectSpec, stm32LaunchConfigurations, Stm32Toolchain } from './generator';
 import { isPlausiblePartNumber, resolveTarget, STM32_FAMILIES, STM32_PARTS } from './mcuDatabase';
-import { ensureStm32Extension } from './ensureExtension';
 
 interface Stm32WizardResult {
 	readonly location: string;
@@ -49,6 +50,13 @@ export class Stm32ModeProvider implements ModeProvider {
 	// --- Create ---------------------------------------------------------------
 
 	async create(): Promise<void> {
+		// The compiler is checked up front: the project can be scaffolded without it, but the user
+		// should know before investing in the wizard that nothing will build until it is installed.
+		const { ready, continueWithout } = await ensureStm32Toolchain(this.host, { silentIfPresent: true, purpose: 'create', allowContinue: true });
+		if (!ready && !continueWithout) {
+			this.host.log('STM32: Create cancelled — the Arm GNU toolchain is not installed.');
+			return;
+		}
 		const result = await this.runWizard();
 		if (!result) {
 			return;
@@ -65,13 +73,10 @@ export class Stm32ModeProvider implements ModeProvider {
 		}
 		this.host.log(`STM32: created ${dest} (${result.project.target.part}, ${result.project.kind}, ${result.project.toolchain})`);
 
-		// Toolchain detection — warn, never block.
-		const gccOnPath = await this.host.toolOnPath('arm-none-eabi-gcc');
-		const toolchainDir = await discoverArmToolchainDir(this.host.getSetting<string>('roboagent.stm32.toolchainPath'), gccOnPath);
-		if (!gccOnPath && !toolchainDir) {
-			await this.host.showWarning(vscode.l10n.t('arm-none-eabi-gcc was not found. Install the Arm GNU toolchain (e.g. `apt install gcc-arm-none-eabi`) or set roboagent.stm32.toolchainPath. The project was created anyway.'));
+		if (!ready) {
+			this.host.log('STM32: arm-none-eabi-gcc not installed — the project will not build until it is (Build offers the installer).');
 		} else if (result.project.toolchain === 'cmake' && !(await this.host.toolOnPath('cmake'))) {
-			await this.host.showWarning(vscode.l10n.t('cmake was not found on PATH; install it to build this project.'));
+			await this.host.showWarning(vscode.l10n.t('cmake was not found on PATH; Build will offer to install it.'));
 		}
 		await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(dest), { forceNewWindow: false });
 	}
@@ -184,13 +189,9 @@ export class Stm32ModeProvider implements ModeProvider {
 			await this.host.showWarning(vscode.l10n.t('No CMakeLists.txt or Makefile in "{0}" — nothing to build. Use Create to scaffold an STM32 project.', root));
 			return undefined;
 		}
-		const gccOnPath = await this.host.toolOnPath('arm-none-eabi-gcc');
-		const toolchainDir = await discoverArmToolchainDir(this.host.getSetting<string>('roboagent.stm32.toolchainPath'), gccOnPath);
-		if (!gccOnPath && !toolchainDir) {
-			await this.host.showError(vscode.l10n.t('arm-none-eabi-gcc not found. Install the Arm GNU toolchain or set roboagent.stm32.toolchainPath.'));
-			return undefined;
-		}
-		const commands = stm32BuildCommands(toolchain, toolchainDir);
+		const { ready, tools } = await ensureStm32Toolchain(this.host, { silentIfPresent: true, purpose: 'build', buildSystem: toolchain });
+		if (!ready) { return undefined; }   // the user was offered the installer
+		const commands = stm32BuildCommands(toolchain, tools.toolchainDir);
 		const result = await this.host.runShellTask({ name: 'RoboAgent: STM32 build', command: commands.build, cwd: root, problemMatchers: ['$roboagent-gcc'], group: 'build' });
 		return result.exitCode;
 	}
@@ -220,6 +221,9 @@ export class Stm32ModeProvider implements ModeProvider {
 			await this.host.showWarning(vscode.l10n.t('This is an STM32 library project; debug an executable project that links it.'));
 			return;
 		}
+		// OpenOCD + a GDB are needed whichever debug adapter runs; the compiler is checked by Build below if needed.
+		const { ready, tools } = await ensureStm32Toolchain(this.host, { silentIfPresent: true, purpose: 'debug' });
+		if (!ready) { return; }   // the user was offered the installer
 
 		let elf = await this.findElf(root);
 		if (!elf) {
@@ -247,16 +251,12 @@ export class Stm32ModeProvider implements ModeProvider {
 		let configuration: Record<string, unknown>;
 		if (this.host.isExtensionInstalled(CORTEX_DEBUG_EXTENSION_ID)) {
 			configuration = { ...cortex, executable: relElf, preLaunchTask: undefined };
-		} else if (await this.host.toolOnPath('arm-none-eabi-gdb')) {
-			this.host.log('STM32: Cortex-Debug not installed; using cpptools cppdbg + OpenOCD');
-			configuration = { ...cppdbg, program: relElf, preLaunchTask: undefined };
+			// Cortex-Debug defaults to `arm-none-eabi-gdb` on PATH; point it at what was actually found.
+			if (tools.toolchainDir) { configuration['armToolchainPath'] = tools.toolchainDir; }
+			if (tools.gdbPath === 'gdb-multiarch') { configuration['gdbPath'] = tools.gdbPath; }
 		} else {
-			const installed = await ensureStm32Extension(this.host, { silentIfPresent: true });
-			if (!installed) { return; }
-			configuration = { ...cortex, executable: relElf, preLaunchTask: undefined };
-		}
-		if (!(await this.host.toolOnPath('openocd'))) {
-			await this.host.showWarning(vscode.l10n.t('openocd was not found on PATH; the debug session will fail to start the GDB server ({0}).', openocdArgs(spec).join(' ')));
+			this.host.log(`STM32: Cortex-Debug not installed; using cpptools cppdbg + OpenOCD with ${tools.gdbPath}`);
+			configuration = { ...cppdbg, program: relElf, preLaunchTask: undefined, miDebuggerPath: tools.gdbPath };
 		}
 		await this.host.startDebugging(root, configuration);
 	}

@@ -18,12 +18,14 @@ import { registerColconTasks } from './colconTasks';
 import { registerCmake } from './cmake';
 import { registerDebug } from './debug';
 import { checkBundledExtensions } from './modes/bundledExtensions';
+import { logEspIdfStatus } from './modes/esp32/ensureIdf';
 import { Esp32ModeProvider } from './modes/esp32/esp32ModeProvider';
 import { registerModeCommands } from './modes/modeCommands';
 import { Mode, ModeProvider } from './modes/modeProvider';
 import { ModeService } from './modes/modeService';
 import { getOutputChannel, log } from './modes/output';
 import { Ros2ModeProvider } from './modes/ros2/ros2ModeProvider';
+import { logStm32ToolchainStatus } from './modes/stm32/ensureToolchain';
 import { Stm32ModeProvider } from './modes/stm32/stm32ModeProvider';
 import { VscodeModeHost } from './modes/vscodeModeHost';
 import { registerNewProject } from './newProject';
@@ -51,6 +53,8 @@ export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(getOutputChannel(), modeService, ...registerModeCommands(modeService, providers, host));
 	log(`RoboAgent ROS2 Toolkit ${(context.extension.packageJSON as { version?: string }).version ?? ''} activated`);
 	checkBundledExtensions();
+	void logStm32ToolchainStatus(host);
+	void logEspIdfStatus(host);
 	void modeService.initialize();
 }
 

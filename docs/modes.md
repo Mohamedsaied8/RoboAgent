@@ -64,10 +64,29 @@ Files are staged in a temp directory and moved into place only at the end.
 from `PATH` or `roboagent.stm32.toolchainPath` (passed as `-DTOOLCHAIN_PATH=`, never written into
 the project).
 
-**Debug** — launches the Cortex-Debug/OpenOCD configuration when Cortex-Debug is installed,
-else cpptools `cppdbg` against an OpenOCD GDB server (`arm-none-eabi-gdb`), else offers the
-installer (`roboagent.stm32.ensureExtension`). No `.elf` → *Build now?* first. Interface script
-from `roboagent.stm32.openocdInterface` (`stlink` default).
+**Toolchain check** — the host tools STM32 mode needs cannot be bundled, so Create, Build and
+Debug first probe for them: `arm-none-eabi-gcc` (on `PATH`, in `roboagent.stm32.toolchainPath`,
+or in the well-known install folders — a setting without a compiler in it is ignored), `cmake`
+or `make` (whichever the project uses), `openocd`, and a GDB (`arm-none-eabi-gdb` next to the
+compiler or on `PATH`, else `gdb-multiarch`). Create needs the compiler, Build the compiler and
+build tool, Debug OpenOCD and GDB. When something is missing a notification lists it and offers:
+
+| Action | What happens |
+|---|---|
+| **Install with apt / dnf / pacman / Homebrew…** | Runs the package-manager command for exactly the missing tools in a *RoboAgent: STM32 toolchain install* terminal (so `sudo` can ask for a password), e.g. `sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib openocd gdb-multiarch`. Run Create/Build/Debug again when it finishes. |
+| **Download Toolchain…** (no package manager found) | Opens the Arm GNU Toolchain download page. |
+| **Use Existing Toolchain…** (compiler or GDB missing) | Folder picker; the folder or its `bin/` must contain `arm-none-eabi-gcc`. Stored in `roboagent.stm32.toolchainPath` and the action continues. |
+| **Create Anyway** (Create only) | Scaffolds the project; Build offers the installer later. |
+
+The same check runs on demand as *RoboAgent: STM32: Check Toolchain* (`roboagent.stm32.ensureToolchain`,
+palette in STM32 mode) and its result is logged at startup.
+
+**Debug** — launches the Cortex-Debug/OpenOCD configuration when Cortex-Debug is installed
+(with `armToolchainPath` / `gdbPath` set when the compiler is off `PATH` or only `gdb-multiarch`
+exists), else cpptools `cppdbg` against an OpenOCD GDB server with the GDB the check found. No
+`.elf` → *Build now?* first. Interface script from `roboagent.stm32.openocdInterface` (`stlink`
+default). Cortex-Debug itself is offered once when STM32 mode is selected
+(`roboagent.stm32.ensureExtension`).
 
 ## ESP32 mode
 
@@ -77,7 +96,25 @@ from `roboagent.stm32.openocdInterface` (`stlink` default).
 `esp32h2`) → template (`hello_world`, `blink`, or hand over to the bundled ESP-IDF extension's
 *New Project* wizard). Generates the IDF layout (`CMakeLists.txt`, `main/`, `sdkconfig.defaults`
 pinning `CONFIG_IDF_TARGET`), `.vscode/*`, and runs `idf.py set-target <chip>` in a terminal when
-an ESP-IDF checkout is found (`roboagent.esp32.idfPath` → `$IDF_PATH` → `~/esp/esp-idf`).
+an ESP-IDF installation is found (see *ESP-IDF check* below).
+
+**ESP-IDF check** — the ESP-IDF *extension* ships with RoboAgent, the ESP-IDF *toolchain* does
+not. Create, Build and Debug therefore first look for an installation, in this order:
+`roboagent.esp32.idfPath` → `$IDF_PATH` → the ESP-IDF extension's current setup
+(`idf.currentSetup`) → installs registered by the ESP-IDF Installation Manager
+(`~/.espressif/tools/eim_idf.json`, `C:\Espressif\tools\eim_idf.json`; `idf.eimIdfJsonPath`
+overrides) → `~/esp/esp-idf`, `~/esp/v*/esp-idf`, `~/.espressif/v*/esp-idf`. A checkout counts
+when it has `tools/idf.py`. When nothing is found, a notification says so and offers:
+
+| Action | What happens |
+|---|---|
+| **Install ESP-IDF…** | Opens the ESP-IDF Installation Manager through the bundled extension (`espIdf.installManager` downloads and launches it); without the extension, opens its download page. Create/Build/Debug are not continued — run them again once the install finishes; the new install is picked up from `eim_idf.json`. |
+| **Use Existing Install…** | Folder picker; the folder must contain `tools/idf.py`. Stored in `roboagent.esp32.idfPath` (user settings) and the action continues. |
+| **Create Anyway** (Create only) | Scaffolds the project without running `idf.py set-target`; `sdkconfig.defaults` still pins the chip. |
+
+Build and Debug do nothing until an installation exists. The same check runs on demand as
+*RoboAgent: ESP32: Check ESP-IDF Installation* (`roboagent.esp32.ensureIdf`, palette in ESP32
+mode), and the result is logged to the RoboAgent output channel at startup.
 
 **Build** — `espIdf.buildDevice` (ESP-IDF extension) when installed; otherwise
 `. $IDF_PATH/export.sh && idf.py build` as a task.
@@ -110,9 +147,9 @@ via the existing `roboagent.debugNode` path).
 | Setting | Purpose |
 |---|---|
 | `roboagent.mode` | Fallback mode (`ros2`). |
-| `roboagent.stm32.toolchainPath` | Directory with `arm-none-eabi-*`; empty = PATH / auto-discovery (`/opt/gcc-arm-none-eabi*`, xPack). |
+| `roboagent.stm32.toolchainPath` | Directory with `arm-none-eabi-*`; empty = PATH / auto-discovery (`/opt/gcc-arm-none-eabi*`, xPack). Set by **Use Existing Toolchain…**; ignored when it holds no compiler. |
 | `roboagent.stm32.openocdInterface` | `stlink` / `jlink` / `cmsis-dap`. |
-| `roboagent.esp32.idfPath` | ESP-IDF checkout; empty = `$IDF_PATH` / `~/esp/esp-idf`. |
+| `roboagent.esp32.idfPath` | ESP-IDF checkout; empty = auto-detect (`$IDF_PATH`, the extension's setup, the Installation Manager registry, `~/esp`, `~/.espressif`). Set by **Use Existing Install…**. |
 | `roboagent.esp32.port` | Serial port for flash/monitor. |
 | `roboagent.ros2.distro` | ROS 2 distro to source; empty = `$ROS_DISTRO` / newest `/opt/ros/*`. |
 
@@ -133,6 +170,16 @@ installed it configures and builds the STM32 projects for real, with `$IDF_PATH`
    Explorer lists the new package.
 2. **Select Mode → STM32** → the Cortex-Debug install prompt appears once → **Create** an
    executable for `STM32F407VGT6` → **Build** (needs `gcc-arm-none-eabi`) → `build/<name>.elf`.
+   Without `arm-none-eabi-gcc` / `openocd` / a GDB: **Create**, **Build** and **Debug** show the
+   *STM32 toolchain is not fully installed* notification naming the missing tools;
+   **Install with apt…** opens a terminal running the `apt-get install` line; **Use Existing
+   Toolchain…** on an unpacked Arm toolchain folder fills `roboagent.stm32.toolchainPath` and
+   the build starts. *STM32: Check Toolchain* reports what was found.
 3. Open a folder containing a `.ioc` → notification *Detected STM32 project* → **Undo** restores
    the previous mode.
-4. ESP32: **Create** → chip `esp32c3` → **Build** with/without the ESP-IDF extension configured.
+4. ESP32 without ESP-IDF installed: **Create**, **Build** and **Debug** each show the *ESP-IDF was
+   not found* notification; **Install ESP-IDF…** opens the ESP-IDF Installation Manager;
+   **Use Existing Install…** on a folder without `tools/idf.py` is refused, on a real checkout it
+   fills `roboagent.esp32.idfPath` and the build starts. *ESP32: Check ESP-IDF Installation*
+   reports the found version once one exists.
+5. ESP32: **Create** → chip `esp32c3` → **Build** with/without the ESP-IDF extension configured.

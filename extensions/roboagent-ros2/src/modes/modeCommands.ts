@@ -6,15 +6,18 @@
 /*---------------------------------------------------------------------------------------------
  *  RoboAgent — the `roboagent.*` mode commands: the mode-dispatching trio the toolbar calls
  *  (`create` / `build` / `debug`), `selectMode`, the per-mode aliases (`roboagent.stm32.build`
- *  …) for the palette, and the STM32 first-run installer.
+ *  …) for the palette, the STM32 extension installer / toolchain check and the ESP-IDF
+ *  installation check.
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
 import { ModeHost } from './modeHost';
 import { Mode, MODE_DESCRIPTORS, ModeProvider, MODES } from './modeProvider';
 import { ModeService } from './modeService';
+import { ensureEspIdf, EnsureIdfOptions } from './esp32/ensureIdf';
 import { logError } from './output';
 import { ensureStm32Extension, EnsureExtensionOptions } from './stm32/ensureExtension';
+import { ensureStm32Toolchain, EnsureToolchainOptions } from './stm32/ensureToolchain';
 
 type Verb = 'create' | 'build' | 'debug';
 
@@ -41,6 +44,8 @@ export function registerModeCommands(service: ModeService, providers: ReadonlyMa
 		reg('roboagent.build', dispatch('build')),
 		reg('roboagent.debug', dispatch('debug')),
 		reg('roboagent.stm32.ensureExtension', (options?: EnsureExtensionOptions) => run('STM32 extension setup', () => ensureStm32Extension(host, options))),
+		reg('roboagent.stm32.ensureToolchain', (options?: EnsureToolchainOptions) => run('STM32 toolchain check', () => ensureStm32Toolchain(host, options))),
+		reg('roboagent.esp32.ensureIdf', (options?: EnsureIdfOptions) => run('ESP-IDF installation check', () => ensureEspIdf(host, options))),
 	];
 
 	for (const mode of MODES) {

@@ -43,6 +43,12 @@ export interface ModeHost {
 	isExtensionInstalled(extensionId: string): boolean;
 	/** Read a `roboagent.*` (or any) setting. */
 	getSetting<T>(key: string): T | undefined;
+	/** Write a setting at user (global) scope. */
+	updateSetting(key: string, value: unknown): Promise<void>;
+	/** Folder picker; resolves to the chosen folder's path, or undefined when cancelled. */
+	pickFolder(title: string, openLabel: string): Promise<string | undefined>;
+	/** Open a URL in the user's browser. */
+	openExternal(url: string): Promise<void>;
 	/** Whether `tool` resolves on PATH. */
 	toolOnPath(tool: string): Promise<boolean>;
 	fileExists(fsPath: string): Promise<boolean>;

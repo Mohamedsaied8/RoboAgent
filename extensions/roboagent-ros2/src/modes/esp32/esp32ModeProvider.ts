@@ -6,7 +6,8 @@
 /*---------------------------------------------------------------------------------------------
  *  RoboAgent — ESP32 mode: Create (wizard → ESP-IDF project), Build (espIdf.buildDevice when the
  *  bundled extension is present, else `idf.py build` in an IDF-activated task), Debug (the
- *  extension's gdbtarget session, falling back to flash + monitor).
+ *  extension's gdbtarget session, falling back to flash + monitor). All three first make sure
+ *  an ESP-IDF installation exists (`ensureIdf.ts`) and offer to install one when it does not.
  *--------------------------------------------------------------------------------------------*/
 
 import * as path from 'path';
@@ -16,8 +17,9 @@ import { detectEsp32 } from '../detect';
 import { ModeHost } from '../modeHost';
 import { ModeProvider } from '../modeProvider';
 import { materialize, ScaffoldError } from '../scaffold';
-import { discoverIdfPath } from '../toolchains';
+import { EspIdfInstallation } from '../toolchains';
 import { BACK, inputStep, pickFolder, pickStep, StepResult, validateProjectName } from '../wizardSteps';
+import { ensureEspIdf } from './ensureIdf';
 import { ESP32_CHIPS, Esp32Chip, esp32DebugConfiguration, esp32IdfCommand, Esp32ProjectSpec, Esp32Template, generateEsp32Project } from './generator';
 
 type TemplateChoice = Esp32Template | 'extension';
@@ -45,10 +47,6 @@ export class Esp32ModeProvider implements ModeProvider {
 		return this.host.isExtensionInstalled(ESP_IDF_EXTENSION_ID);
 	}
 
-	private idfPath(): Promise<string | undefined> {
-		return discoverIdfPath(this.host.getSetting<string>('roboagent.esp32.idfPath'));
-	}
-
 	private port(): string | undefined {
 		const p = this.host.getSetting<string>('roboagent.esp32.port');
 		return p && p.trim() ? p.trim() : undefined;
@@ -57,6 +55,13 @@ export class Esp32ModeProvider implements ModeProvider {
 	// --- Create ---------------------------------------------------------------
 
 	async create(): Promise<void> {
+		// ESP-IDF is checked up front: the project can be scaffolded without it, but the user
+		// should know before investing in the wizard that nothing will build until it is installed.
+		const { installation, continueWithout } = await ensureEspIdf(this.host, { silentIfPresent: true, purpose: 'create', allowContinue: true });
+		if (!installation && !continueWithout) {
+			this.host.log('ESP32: Create cancelled — ESP-IDF is not installed.');
+			return;
+		}
 		const result = await this.runWizard();
 		if (!result) {
 			return;
@@ -78,12 +83,11 @@ export class Esp32ModeProvider implements ModeProvider {
 		}
 		this.host.log(`ESP32: created ${dest} (${result.project.chip}, ${result.project.template})`);
 
-		const idf = await this.idfPath();
-		if (idf) {
+		if (installation) {
 			// `idf.py set-target` needs the IDF environment; run it now so the sdkconfig exists before the first build.
-			this.host.sendToTerminal('RoboAgent: ESP32', esp32IdfCommand(`set-target ${result.project.chip}`, undefined, idf), dest);
-		} else if (!this.extensionInstalled) {
-			await this.host.showWarning(vscode.l10n.t('No ESP-IDF installation found ($IDF_PATH / roboagent.esp32.idfPath). The project was created; install ESP-IDF or configure the ESP-IDF extension to build it.'));
+			this.host.sendToTerminal('RoboAgent: ESP32', esp32IdfCommand(`set-target ${result.project.chip}`, undefined, installation.idfPath), dest);
+		} else {
+			this.host.log('ESP32: ESP-IDF not installed — skipped idf.py set-target (sdkconfig.defaults pins the target for the first build).');
 		}
 		await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(dest), { forceNewWindow: false });
 	}
@@ -158,17 +162,14 @@ export class Esp32ModeProvider implements ModeProvider {
 	async build(): Promise<number | undefined> {
 		const root = await this.projectRoot();
 		if (!root) { return undefined; }
+		const { installation } = await ensureEspIdf(this.host, { silentIfPresent: true, purpose: 'build' });
+		if (!installation) { return undefined; }   // the user was offered the installer
 		if (this.extensionInstalled) {
 			this.host.log('ESP32: build via espIdf.buildDevice');
 			await this.host.executeCommand('espIdf.buildDevice');
 			return undefined;   // the extension owns the task; no exit code available here
 		}
-		const idf = await this.idfPath();
-		if (!idf && !process.env['IDF_PATH']) {
-			await this.host.showError(vscode.l10n.t('ESP-IDF not found: set roboagent.esp32.idfPath (or $IDF_PATH) to an ESP-IDF checkout, or install the ESP-IDF extension.'));
-			return undefined;
-		}
-		const result = await this.host.runShellTask({ name: 'RoboAgent: ESP32 build', command: esp32IdfCommand('build', undefined, idf), cwd: root, problemMatchers: ['$roboagent-gcc'], group: 'build' });
+		const result = await this.host.runShellTask({ name: 'RoboAgent: ESP32 build', command: esp32IdfCommand('build', undefined, installation.idfPath), cwd: root, problemMatchers: ['$roboagent-gcc'], group: 'build' });
 		return result.exitCode;
 	}
 
@@ -177,6 +178,8 @@ export class Esp32ModeProvider implements ModeProvider {
 	async debug(): Promise<void> {
 		const root = await this.projectRoot();
 		if (!root) { return; }
+		const { installation } = await ensureEspIdf(this.host, { silentIfPresent: true, purpose: 'debug' });
+		if (!installation) { return; }   // the user was offered the installer
 		if (this.extensionInstalled) {
 			const started = await this.host.startDebugging(root, esp32DebugConfiguration());
 			if (started) { return; }
@@ -186,16 +189,15 @@ export class Esp32ModeProvider implements ModeProvider {
 			this.extensionInstalled
 				? vscode.l10n.t('Could not start the ESP-IDF debug session (is the board connected via JTAG/USB and OpenOCD configured?). Flash and monitor instead?')
 				: vscode.l10n.t('The ESP-IDF extension is not installed, so on-chip debugging is unavailable. Flash and monitor instead?'),
-			{ title: vscode.l10n.t('Flash + Monitor'), run: () => this.flashMonitor(root) },
+			{ title: vscode.l10n.t('Flash + Monitor'), run: () => this.flashMonitor(root, installation) },
 		);
 	}
 
-	private async flashMonitor(root: string): Promise<void> {
+	private async flashMonitor(root: string, installation: EspIdfInstallation): Promise<void> {
 		if (this.extensionInstalled) {
 			await this.host.executeCommand('espIdf.buildFlashMonitor');
 			return;
 		}
-		const idf = await this.idfPath();
-		this.host.sendToTerminal('RoboAgent: ESP32 monitor', esp32IdfCommand('flash monitor', this.port(), idf), root);
+		this.host.sendToTerminal('RoboAgent: ESP32 monitor', esp32IdfCommand('flash monitor', this.port(), installation.idfPath), root);
 	}
 }
