@@ -31,6 +31,13 @@ toolbar, bundled ESP-IDF + STM32 first-run installer). Design + manual test matr
 | 6.13 | ESP-IDF presence check before ESP32 Create / Build / Debug (`esp32/ensureIdf.ts`; `discoverEspIdf` also reads `idf.currentSetup` + EIM `eim_idf.json`, `~/.espressif`): notification offers **Install ESP-IDF…** (EIM via `espIdf.installManager`, download page without the extension), **Use Existing Install…** (validated → `roboagent.esp32.idfPath`), **Create Anyway**; palette `roboagent.esp32.ensureIdf`; startup log line; discovery + provider unit tests (2026-09-07). E2E in the live app still pending under 6.12. | ☑ |
 | 6.14 | STM32 toolchain presence check before Create / Build / Debug (`stm32/ensureToolchain.ts`: per-purpose requirements — gcc / gcc+cmake|make / openocd+gdb; probes PATH, `roboagent.stm32.toolchainPath` (stale value ignored), well-known dirs, `gdb-multiarch`): notification offers **Install with apt/dnf/pacman/Homebrew…** (missing packages only, run in a terminal), **Download Toolchain…**, **Use Existing Toolchain…** (folder or its `bin/` → setting), **Create Anyway**; found GDB / off-PATH toolchain passed into the Cortex-Debug and cppdbg configs; palette `roboagent.stm32.ensureToolchain`; startup log line; unit tests (2026-09-07). E2E pending under 6.12. | ☑ |
 
+**Released 2026-09-07 — v1.120.1** (tag `v1.120.1` = commit `5805903`): version bumped in
+`package.json` / `package-lock.json` (+ copilot / roboagent-ros2 `engines.vscode`), Debian metadata
+branded (`resources/linux/debian/control.template`). Built under Node 22.22.1 with
+`gulp vscode-linux-x64-min` → `vscode-linux-x64-prepare-deb` → `vscode-linux-x64-build-deb`;
+artifact `bin/roboagent_1.120.1-1788737886_amd64.deb` (sha256 alongside), `product.json` stamped
+with that commit. The rpm spec and snapcraft templates still carry the upstream tagline (unused).
+
 Verification: core tsc clean; extension tsc + eslint clean; `npm run test-unit` in
 `extensions/roboagent-ros2` (unit + smoke). The smoke test found two real generator bugs on its
 first run — CMake `$<CONFIG>` lists need `;` separators, and `CMAKE_EXECUTABLE_SUFFIX_C` doubled
