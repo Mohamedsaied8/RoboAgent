@@ -6,7 +6,7 @@
 	"publisher": "roboagent",
 	"license": "MIT",
 	"engines": {
-		"vscode": "^1.120.0"
+		"vscode": "^1.120.1"
 	},
 	"categories": [
 		"Debuggers",
