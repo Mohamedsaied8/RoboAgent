@@ -5,14 +5,16 @@ Depends: @@DEPENDS@@
 Recommends: @@RECOMMENDS@@
 Priority: optional
 Architecture: @@ARCHITECTURE@@
-Maintainer: Microsoft Corporation <vscode-linux@microsoft.com>
-Homepage: https://code.visualstudio.com/
+Maintainer: Mohamed Saied <infint_hero@hotmail.com>
+Homepage: https://github.com/Mohamedsaied8/RoboAgent
 Installed-Size: @@INSTALLEDSIZE@@
 Provides: visual-studio-@@NAME@@
 Conflicts: visual-studio-@@NAME@@
 Replaces: visual-studio-@@NAME@@
-Description: Code editing. Redefined.
- Visual Studio Code is a new choice of tool that combines the simplicity of
- a code editor with what developers need for the core edit-build-debug cycle.
- See https://code.visualstudio.com/docs/setup/linux for installation
- instructions and FAQ.
+Description: AI Robotics IDE for STM32, ESP32 and ROS 2
+ RoboAgent is an AI-native robotics IDE built on Visual Studio Code. It adds
+ a Mode selector with Create / Build / Debug for STM32 firmware, ESP-IDF
+ projects and ROS 2 workspaces, a ROS 2 package explorer and node graph, and
+ bundles the ESP-IDF extension.
+ See https://github.com/Mohamedsaied8/RoboAgent for installation
+ instructions.
