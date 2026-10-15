@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ChildProcess, spawn } from 'child_process';
-import { ExecOptions, ExecResult } from '../../kernel/host';
+import { ExecOptions, ExecResult, IProcessHandle, ProcessExit, SpawnOptions } from '../../kernel/host';
 import * as path from 'path';
 import { isInside, PathOutsideWorkspaceError, resolveInside } from './nodeFileSystem';
 
@@ -217,4 +217,117 @@ export async function runProcess(root: string, command: string, args: readonly s
 		});
 		child.on('close', code => finish({ exitCode: code ?? exitCode }));
 	});
+}
+
+export interface SpawnProcessOptions extends SpawnOptions {
+	readonly baseEnv?: Readonly<Record<string, string | undefined>>;
+	readonly redact?: (text: string) => string;
+}
+
+/**
+ * Starts a long-lived program (no shell, own process group, stdin piped) and returns a handle.
+ * The working directory is `trustedCwd` when given (the caller has checked it), otherwise `cwd`
+ * resolved inside `root`. Like {@link runProcess}, it is killed when this process exits.
+ */
+export function spawnProcess(root: string, command: string, args: readonly string[], options: SpawnProcessOptions = {}): IProcessHandle {
+	const redact = options.redact ?? ((text: string) => text);
+	const env: Record<string, string | undefined> = { ...(options.baseEnv ?? process.env), ...options.env };
+	for (const key of Object.keys(env)) {
+		if (key.toUpperCase() === 'PATH') {
+			env[key] = sanitizePath(env[key], undefined, root);
+		}
+		if (options.unsetEnv?.some(u => u.toUpperCase() === key.toUpperCase())) {
+			delete env[key];
+		}
+	}
+	let resolveExit!: (e: ProcessExit) => void;
+	const exited = new Promise<ProcessExit>(r => resolveExit = r);
+	let done = false;
+	const finish = (e: ProcessExit) => {
+		if (!done) {
+			done = true;
+			resolveExit(e);
+		}
+	};
+
+	let child: ChildProcess | undefined;
+	const start = async () => {
+		let cwd: string;
+		try {
+			cwd = options.trustedCwd ?? await resolveInside(root, options.cwd ?? '.');
+		} catch (err) {
+			finish({ exitCode: null, spawnError: err instanceof PathOutsideWorkspaceError ? `Working directory "${options.cwd}" is outside the workspace` : String(err instanceof Error ? err.message : err) });
+			return;
+		}
+		if (done) {
+			return; // killed while the working folder was being checked: never start it
+		}
+		try {
+			child = spawn(command, [...args], { cwd, env, shell: false, detached: process.platform !== 'win32', windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+		} catch (err) {
+			finish({ exitCode: null, spawnError: err instanceof Error ? err.message : String(err) });
+			return;
+		}
+		const c = child;
+		liveChildren.add(c);
+		if (!exitHookInstalled) {
+			exitHookInstalled = true;
+			process.once('exit', killAllChildren);
+		}
+		c.stdin!.on('error', () => { });
+		for (const stream of ['stdout', 'stderr'] as const) {
+			c[stream]!.setEncoding('utf8');
+			c[stream]!.on('data', (d: string) => {
+				try {
+					options.onOutput?.(stream, redact(d));
+				} catch {
+					// a faulty listener must not take the host down
+				}
+			});
+		}
+		for (const text of pending.splice(0)) {
+			c.stdin!.write(text);
+		}
+		c.on('error', err => {
+			liveChildren.delete(c);
+			finish({ exitCode: null, spawnError: err.message });
+		});
+		c.on('exit', (code, signal) => {
+			liveChildren.delete(c);
+			// Nothing it started may outlive it.
+			killTree(c, 'SIGTERM');
+			finish({ exitCode: code, ...signal ? { signal } : {} });
+		});
+	};
+	const pending: string[] = [];
+	void start();
+
+	return {
+		get pid() { return child?.pid; },
+		write(text: string) {
+			if (done) {
+				return;
+			}
+			if (child?.stdin) {
+				child.stdin.write(text);
+			} else {
+				pending.push(text);
+			}
+		},
+		exited,
+		kill() {
+			if (!done) {
+				if (child) {
+					killTree(child, 'SIGTERM');
+					const c = child;
+					const timer = setTimeout(() => killTree(c, 'SIGKILL'), KILL_GRACE_MS);
+					void exited.then(() => clearTimeout(timer));
+				} else {
+					// still resolving the working folder: start() checks `done` before spawning
+					finish({ exitCode: null, spawnError: 'killed before it started' });
+				}
+			}
+			return exited;
+		},
+	};
 }

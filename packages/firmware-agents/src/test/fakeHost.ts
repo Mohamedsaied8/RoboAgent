@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ApprovalRequest, DirEntry, ExecOptions, ExecResult, IAgentHost, IFileSystem, ISystemProbe, LogLevel, ProgramSearchOptions, UdevRuleFile } from '../kernel/host';
+import { ApprovalRequest, DirEntry, ExecOptions, ExecResult, IAgentHost, IFileSystem, IProcessHandle, ISystemProbe, LogLevel, ProgramSearchOptions, SpawnOptions, UdevRuleFile } from '../kernel/host';
 
 /** System probe for tests: programs and udev folders as configured, nothing real. */
 export class FakeSystemProbe implements ISystemProbe {
@@ -18,6 +18,9 @@ export class FakeSystemProbe implements ISystemProbe {
 	async udevRuleDirs() { return this.ruleDirs; }
 	async udevAdminDir() { return this.ruleDirs[0]; }
 	async readUdevRules() { return this.ruleFiles; }
+	/** Folders `trustedDataDir` accepts. */
+	readonly trustedDirs = new Set<string>();
+	async trustedDataDir(candidates: readonly string[]) { return candidates.find(c => this.trustedDirs.has(c)); }
 }
 
 const normalize = (p: string) => p.replace(/^\.(\/+|$)/, '').replace(/\/+$/, '');
@@ -80,6 +83,9 @@ export class FakeHost implements IAgentHost {
 	readonly logs: { level: LogLevel; message: string }[] = [];
 	onExec: ExecHandler = () => undefined;
 	system?: FakeSystemProbe;
+	readonly spawned: { command: string; args: readonly string[]; options: SpawnOptions }[] = [];
+	/** Scripts long-lived programs; without it, `spawn` fails like a missing program. */
+	onSpawn?: (command: string, args: readonly string[], options: SpawnOptions) => IProcessHandle;
 
 	constructor(private readonly approveAll = true) { }
 
@@ -94,6 +100,14 @@ export class FakeHost implements IAgentHost {
 			options.onOutput?.('stderr', scripted.stderr);
 		}
 		return result;
+	}
+	spawn(command: string, args: readonly string[], options: SpawnOptions = {}): IProcessHandle {
+		this.spawned.push({ command, args, options });
+		if (this.onSpawn) {
+			return this.onSpawn(command, args, options);
+		}
+		const exited = Promise.resolve({ exitCode: null, spawnError: `spawn ${command} ENOENT` });
+		return { pid: undefined, write: () => { }, exited, kill: () => exited };
 	}
 	async approve(request: ApprovalRequest): Promise<boolean> {
 		this.approvals.push(request);

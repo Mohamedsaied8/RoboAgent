@@ -51,7 +51,8 @@ const KNOWN_PROBLEMS: readonly [RegExp, string][] = [
 	[/A fatal error occurred: Failed to connect|No serial data received|could not open port/i, 'Cannot reach the ESP32 over serial: check the port, the cable, and whether the board needs BOOT held during reset.'],
 ];
 
-function diagnose(output: string): string | undefined {
+/** Plain-language cause of a known probe/OpenOCD failure in `output`, if any. */
+export function diagnoseProbeProblem(output: string): string | undefined {
 	return KNOWN_PROBLEMS.find(([re]) => re.test(output))?.[1];
 }
 
@@ -87,7 +88,7 @@ abstract class CommandFlasher implements IFlasher {
 			}
 		}
 		const ok = last.exitCode === 0 && !last.spawnError;
-		const problem = ok ? undefined : diagnose(output);
+		const problem = ok ? undefined : diagnoseProbeProblem(output);
 		return {
 			ok,
 			flasher: this.id,

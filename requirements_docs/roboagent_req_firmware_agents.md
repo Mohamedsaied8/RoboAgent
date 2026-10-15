@@ -218,8 +218,8 @@ registers, memory, SFR fields, backtrace, crash decode, RTOS snapshot), `ChangeR
 
 1. ✅ **LLM path** — OpenRouter through an OpenAI-compatible `ILlmClient` (tool calls, streaming); key from `OPENROUTER_API_KEY` or secret storage, model from configuration. The RoboAgent gateway adapter can follow behind the same port.
 2. ✅ **Test framework** — GoogleTest + GMock primary; Unity fallback for small MCUs and ESP-IDF.
-3. ⚠ **Hardware for validation** — which STM32 board (ST-Link V2) and which ESP32 board (S3/C3 with USB-JTAG, or ESP-PROG).
-4. SVD sourcing — fetch per MCU from CMSIS packs / Espressif and cache locally (first use needs network).
+3. ⚠ **Hardware for validation** — STM32: ✅ Blue Pill (STM32F103C8T6) + ST-Link V2 (2026-10-15). ESP32 board (S3/C3 with USB-JTAG, or ESP-PROG): still open.
+4. ✅ SVD sourcing — pinned STM32 SVDs from cmsis-svd-data at one commit (SHA-256 + git blob id) into the tool store; a workspace `.svd` can be passed instead. Espressif SVDs come with P2b.
 
 ## 9a. Security deferrals (from the P0 security review, 2026-10-15)
 
@@ -229,7 +229,9 @@ registers, memory, SFR fields, backtrace, crash decode, RTOS snapshot), `ChangeR
 | Windows binary planting (libuv searches the child's cwd before `PATH`) | Package is Linux-only today | Before any Windows build: resolve tool commands to absolute paths from trusted directories |
 | Secret filtering for file reads (`.env`, `.git/config`, `*.pem`, `id_*`, credential files) | No file-read tool exists in P0 | **Blocking gate for P1 file tools** |
 | `onOutput` redaction is per chunk (a key split across two chunks can pass) | Captured output is redacted as a whole; only the live stream is per chunk | P4, when the host UIs consume the stream |
-| A child that calls `setsid` escapes process-group kill | Inherent to POSIX process groups | Long-lived servers (OpenOCD, GDB) get a tracked handle API in P2a |
+| A child that calls `setsid` escapes process-group kill | Inherent to POSIX process groups | P2a added the tracked handle API (`IAgentHost.spawn`); a `setsid` grandchild still escapes — revisit if a tool needs it |
+| Debug: side-effect peripheral reads through pointer variables in GDB expressions, conditions or watchpoints (e.g. `huart1.Instance->DR`) | Only literal peripheral addresses can be recognised before GDB evaluates; writes stay blocked by `may-write-memory off` | Later: GDB `mem … wo` regions for the SVD's side-effect registers (needs re-declaring OpenOCD's memory map) |
+| Debug: OpenOCD's localhost GDB port can be reached by another local user before GDB connects | Single-user dev machines; `gdb_port pipe` needs GDB to start OpenOCD through `/bin/sh`, against the no-shell rule | Before multi-user / CI use: check OpenOCD's accepted-connection log, or a pipe without a shell |
 
  (this dev machine, 2026-10-15)
 

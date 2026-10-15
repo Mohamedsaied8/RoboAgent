@@ -17,6 +17,8 @@ export interface NodeSystemProbeOptions {
 	readonly workspaceRoot?: string;
 	/** The tool store's bin folders, searched first unless `systemOnly` is asked for. */
 	readonly toolStoreBins?: () => Promise<string[]>;
+	/** The tool store's folder: data folders inside it count as trusted (see `trustedDataDir`). */
+	readonly toolStoreRoot?: string;
 	readonly platform?: NodeJS.Platform;
 }
 
@@ -114,6 +116,27 @@ export class NodeSystemProbe implements ISystemProbe {
 				if (await this.isLinkChainTrusted(candidate)) {
 					return candidate;
 				}
+			}
+		}
+		return undefined;
+	}
+
+	async trustedDataDir(candidates: readonly string[]): Promise<string | undefined> {
+		const workspace = this.options.workspaceRoot && await fs.realpath(this.options.workspaceRoot).catch(() => path.resolve(this.options.workspaceRoot!));
+		const store = this.options.toolStoreRoot && await fs.realpath(this.options.toolStoreRoot).catch(() => undefined);
+		for (const candidate of candidates) {
+			if (!path.isAbsolute(candidate)) {
+				continue;
+			}
+			const real = await fs.realpath(candidate).catch(() => undefined);
+			if (!real || !await fs.stat(real).then(s => s.isDirectory(), () => false)) {
+				continue;
+			}
+			if (workspace && (isInside(workspace, real) || isInside(real, workspace))) {
+				continue;
+			}
+			if ((store && isInside(store, real) && real !== store) || await this.isRootTrusted(real)) {
+				return real;
 			}
 		}
 		return undefined;

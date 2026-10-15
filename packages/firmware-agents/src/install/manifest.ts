@@ -12,6 +12,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ArchiveSpec, PlatformId } from '../kernel/host';
+import { SVD_COMMIT } from '../embedded/svd/svdManifest';
 
 export type ToolId = 'xpack-openocd' | 'xpack-arm-none-eabi-gcc' | 'openocd-esp32' | 'xtensa-esp-elf-gdb' | 'riscv32-esp-elf-gdb';
 
@@ -38,6 +39,8 @@ export const ALLOWED_DOWNLOAD_HOSTS: readonly string[] = [
 	'release-assets.githubusercontent.com',
 	'dl.espressif.com',
 	'developer.arm.com',
+	// Pinned SVD files (a fixed commit of cmsis-svd-data; git blob id and SHA-256 checked).
+	'raw.githubusercontent.com',
 ];
 
 const XPACK_OCD = 'https://github.com/xpack-dev-tools/openocd-xpack/releases/download/v0.12.0-7/xpack-openocd-0.12.0-7';
@@ -148,6 +151,10 @@ export function validateArchiveSpec(spec: ArchiveSpec, allowedHosts: readonly st
 	if (!allowedHosts.includes(url.hostname)) {
 		return `${url.hostname} is not an allowed download host`;
 	}
+	// raw.githubusercontent.com serves any GitHub user's files: only the pinned SVD repository commit.
+	if (url.hostname === 'raw.githubusercontent.com' && !url.pathname.startsWith(`/cmsis-svd/cmsis-svd-data/${SVD_COMMIT}/`)) {
+		return `${spec.url} is not in the pinned SVD repository commit`;
+	}
 	if (!/^[0-9a-f]{64}$/.test(spec.sha256)) {
 		return `invalid SHA-256 for ${spec.id}`;
 	}
@@ -156,6 +163,12 @@ export function validateArchiveSpec(spec: ArchiveSpec, allowedHosts: readonly st
 	}
 	if (spec.binDir.startsWith('/') || spec.binDir.split('/').includes('..')) {
 		return `invalid binDir ${spec.binDir}`;
+	}
+	if (spec.format === 'file' && (!spec.fileName || !isSafeToolName(spec.fileName))) {
+		return `invalid file name for ${spec.id}`;
+	}
+	if (spec.gitBlobSha1 !== undefined && !/^[0-9a-f]{40}$/.test(spec.gitBlobSha1)) {
+		return `invalid git blob id for ${spec.id}`;
 	}
 	return undefined;
 }

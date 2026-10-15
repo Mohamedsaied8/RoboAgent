@@ -85,8 +85,8 @@ export class ToolInstallError extends Error {
 	}
 }
 
-const LIST_FLAGS: Readonly<Record<ArchiveSpec['format'], string>> = { 'tar.gz': '-tzf', 'tar.xz': '-tJf', 'zip': '-tf' };
-const EXTRACT_FLAGS: Readonly<Record<ArchiveSpec['format'], string>> = { 'tar.gz': '-xzf', 'tar.xz': '-xJf', 'zip': '-xf' };
+const LIST_FLAGS: Readonly<Record<Exclude<ArchiveSpec['format'], 'file'>, string>> = { 'tar.gz': '-tzf', 'tar.xz': '-tJf', 'zip': '-tf' };
+const EXTRACT_FLAGS: Readonly<Record<Exclude<ArchiveSpec['format'], 'file'>, string>> = { 'tar.gz': '-xzf', 'tar.xz': '-xJf', 'zip': '-xf' };
 const LOCK_STALE_MS = 10 * 60_000;
 const TMP_STALE_MS = 6 * 60 * 60_000;
 
@@ -211,12 +211,16 @@ export class NodeToolStore implements IToolStore {
 		await this.cleanStaleTemp(tmpRoot);
 		const tmp = await fs.mkdtemp(path.join(tmpRoot, `${spec.id}-`));
 		try {
-			const archive = path.join(tmp, `download.${spec.format}`);
+			if (spec.format === 'file') {
+				return await this.installSingleFile(spec, tmp, finalDir, options);
+			}
+			const format = spec.format;
+			const archive = path.join(tmp, `download.${format}`);
 			await this.download(spec, archive, options);
-			await this.checkListing(spec, archive, tmp, options.signal);
+			await this.checkListing(format, spec, archive, tmp, options.signal);
 			const extracted = path.join(tmp, 'x');
 			await fs.mkdir(extracted);
-			const x = await runProcess(tmp, 'tar', [EXTRACT_FLAGS[spec.format], archive, '-C', extracted, '--no-same-owner'], { timeoutMs: 15 * 60_000, ...options.signal ? { signal: options.signal } : {} });
+			const x = await runProcess(tmp, 'tar', [EXTRACT_FLAGS[format], archive, '-C', extracted, '--no-same-owner'], { timeoutMs: 15 * 60_000, ...options.signal ? { signal: options.signal } : {} });
 			if (x.exitCode !== 0) {
 				throw new ToolInstallError(`Extracting ${spec.id} failed: ${(x.stderr || x.spawnError || '').trim().slice(0, 300)}`);
 			}
@@ -224,17 +228,30 @@ export class NodeToolStore implements IToolStore {
 			if (!await fs.stat(path.join(extracted, spec.binDir)).then(s => s.isDirectory(), () => false)) {
 				throw new ToolInstallError(`${spec.id} ${spec.version}: expected folder ${spec.binDir} is not in the archive.`);
 			}
-			const entry: IndexEntry = { id: spec.id, version: spec.version, binDir: spec.binDir, sha256: spec.sha256, onPath: spec.onPath, installedAt: new Date().toISOString(), url: spec.url };
-			await this.updateIndex(async entries => {
-				await fs.rm(finalDir, { recursive: true, force: true });
-				await fs.mkdir(path.dirname(finalDir), { recursive: true });
-				await fs.rename(extracted, finalDir);
-				return [...entries.filter(e => !(e.id === spec.id && e.version === spec.version)), entry];
-			});
-			return this.toInstalled(entry)!;
+			return await this.commit(spec, extracted, finalDir);
 		} finally {
 			await fs.rm(tmp, { recursive: true, force: true });
 		}
+	}
+
+	/** A single verified file (e.g. an SVD) stored as `<install>/<binDir>/<fileName>`. */
+	private async installSingleFile(spec: ArchiveSpec, tmp: string, finalDir: string, options: { signal?: AbortSignal; onProgress?: (bytes: number, total: number) => void }): Promise<InstalledTool> {
+		const extracted = path.join(tmp, 'x');
+		const folder = path.join(extracted, spec.binDir);
+		await fs.mkdir(folder, { recursive: true });
+		await this.download(spec, path.join(folder, spec.fileName!), options);
+		return this.commit(spec, extracted, finalDir);
+	}
+
+	private async commit(spec: ArchiveSpec, extracted: string, finalDir: string): Promise<InstalledTool> {
+		const entry: IndexEntry = { id: spec.id, version: spec.version, binDir: spec.binDir, sha256: spec.sha256, onPath: spec.onPath, installedAt: new Date().toISOString(), url: spec.url };
+		await this.updateIndex(async entries => {
+			await fs.rm(finalDir, { recursive: true, force: true });
+			await fs.mkdir(path.dirname(finalDir), { recursive: true });
+			await fs.rename(extracted, finalDir);
+			return [...entries.filter(e => !(e.id === spec.id && e.version === spec.version)), entry];
+		});
+		return this.toInstalled(entry)!;
 	}
 
 	private async download(spec: ArchiveSpec, dest: string, options: { signal?: AbortSignal; onProgress?: (bytes: number, total: number) => void }): Promise<void> {
@@ -249,6 +266,8 @@ export class NodeToolStore implements IToolStore {
 			throw new ToolInstallError(`Download of ${spec.id} failed: HTTP ${response.status}`);
 		}
 		const hash = createHash('sha256');
+		// git hashes "blob <size>\0<content>"; the size is pinned, so the header is known up front.
+		const blob = spec.gitBlobSha1 ? createHash('sha1').update(`blob ${spec.size}\0`) : undefined;
 		let bytes = 0;
 		const body = response.body as unknown as AsyncIterable<Uint8Array>;
 		async function* checked() {
@@ -258,6 +277,7 @@ export class NodeToolStore implements IToolStore {
 					throw new ToolInstallError(`Download of ${spec.id} is larger than the pinned ${spec.size} bytes; refusing it.`);
 				}
 				hash.update(chunk);
+				blob?.update(chunk);
 				options.onProgress?.(bytes, spec.size);
 				yield chunk;
 			}
@@ -276,11 +296,15 @@ export class NodeToolStore implements IToolStore {
 		if (actual !== spec.sha256) {
 			throw new ToolInstallError(`SHA-256 of ${spec.id} ${spec.version} does not match the vendor's published value (got ${actual}); refusing it.`);
 		}
+		const blobId = blob?.digest('hex');
+		if (blobId !== undefined && blobId !== spec.gitBlobSha1) {
+			throw new ToolInstallError(`Git blob id of ${spec.id} ${spec.version} does not match the repository's (got ${blobId}); refusing it.`);
+		}
 	}
 
 	/** Refuses archives with absolute names, drive letters or `..` segments before extracting anything. */
-	private async checkListing(spec: ArchiveSpec, archive: string, cwd: string, signal?: AbortSignal): Promise<void> {
-		const list = await runProcess(cwd, 'tar', [LIST_FLAGS[spec.format], archive], { timeoutMs: 10 * 60_000, maxOutputBytes: 64 * 1024 * 1024, ...signal ? { signal } : {} });
+	private async checkListing(format: Exclude<ArchiveSpec['format'], 'file'>, spec: ArchiveSpec, archive: string, cwd: string, signal?: AbortSignal): Promise<void> {
+		const list = await runProcess(cwd, 'tar', [LIST_FLAGS[format], archive], { timeoutMs: 10 * 60_000, maxOutputBytes: 64 * 1024 * 1024, ...signal ? { signal } : {} });
 		if (list.exitCode !== 0) {
 			throw new ToolInstallError(`${spec.id}: the archive cannot be read (${(list.stderr || list.spawnError || '').trim().slice(0, 200)}).`);
 		}

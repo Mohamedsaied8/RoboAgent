@@ -5,10 +5,10 @@
 
 import { realpathSync } from 'fs';
 import * as path from 'path';
-import { ApprovalRequest, ExecOptions, ExecResult, IAgentHost, IFileSystem, ISystemProbe, IToolStore, LogLevel } from '../../kernel/host';
+import { ApprovalRequest, ExecOptions, ExecResult, IAgentHost, IFileSystem, IProcessHandle, ISystemProbe, IToolStore, LogLevel, SpawnOptions } from '../../kernel/host';
 import { redactSecrets } from '../../kernel/redact';
 import { isInside, NodeFileSystem } from './nodeFileSystem';
-import { runProcess } from './nodeProcessRunner';
+import { runProcess, spawnProcess } from './nodeProcessRunner';
 import { NodeSystemProbe } from './nodeSystemProbe';
 
 /** Environment variables never passed to child processes (in addition to {@link SECRET_ENV_PATTERN}). */
@@ -108,20 +108,73 @@ export class NodeAgentHost implements IAgentHost {
 			env: options.env ?? process.env,
 			workspaceRoot: options.root,
 			toolStoreBins: () => this.toolStore ? this.toolStore.binPaths() : Promise.resolve([]),
+			...this.toolStore ? { toolStoreRoot: this.toolStore.location } : {},
 		});
 		this.childEnv = Object.fromEntries(Object.entries(options.env ?? process.env)
 			.filter(([name, value]) => !secretNames.has(name) && !SECRET_ENV_PATTERN.test(name) && !(value !== undefined && secretValues.has(value))));
 	}
 
 	async exec(command: string, args: readonly string[], options?: ExecOptions): Promise<ExecResult> {
-		let baseEnv = this.childEnv;
-		const bins = this.toolStore && !options?.noToolStorePath ? await this.toolStore.binPaths() : [];
-		if (bins.length) {
-			const key = Object.keys(baseEnv).find(k => k.toUpperCase() === 'PATH') ?? 'PATH';
-			baseEnv = { ...baseEnv, [key]: [...bins, baseEnv[key]].filter(Boolean).join(path.delimiter) };
-		}
+		const baseEnv = await this.envWithToolStore(!options?.noToolStorePath);
 		// Tool output goes to the model and the UI; keep secrets out of both even if a child prints one.
 		return runProcess(this.options.root, command, args, { ...options, baseEnv, redact: text => this.redact(text) });
+	}
+
+	/**
+	 * Long-lived programs (OpenOCD, GDB) get the same environment as `exec`. `command` must be an
+	 * absolute path (found by the dependency checks), and `trustedCwd` must pass
+	 * {@link ISystemProbe.trustedDataDir}: inside the tool store, or root-owned.
+	 */
+	spawn(command: string, args: readonly string[], options: SpawnOptions = {}): IProcessHandle {
+		const failedHandle = (spawnError: string): IProcessHandle => {
+			const exited = Promise.resolve({ exitCode: null, spawnError });
+			return { pid: undefined, write: () => { }, exited, kill: () => exited };
+		};
+		if (!path.isAbsolute(command)) {
+			return failedHandle(`spawn needs an absolute program path, got "${command}"`);
+		}
+		const ready = (async () => {
+			const trustedCwd = options.trustedCwd;
+			if (trustedCwd !== undefined && (!path.isAbsolute(trustedCwd) || await this.system.trustedDataDir?.([trustedCwd]) === undefined)) {
+				return `"${trustedCwd}" is not a trusted working folder (it must be in the tool store or root-owned, and outside the workspace)`;
+			}
+			return { baseEnv: await this.envWithToolStore(true), ...trustedCwd ? { trustedCwd: await this.system.trustedDataDir!([trustedCwd]) } : {} };
+		})().catch(err => `could not prepare the program's environment: ${err instanceof Error ? err.message : String(err)}`);
+		// The handle is needed synchronously; the checks finish before the program starts.
+		let inner: IProcessHandle | undefined;
+		const queued: string[] = [];
+		let killed = false;
+		const exited = ready.then(r => {
+			if (typeof r === 'string') {
+				return { exitCode: null, spawnError: r };
+			}
+			if (killed) {
+				return { exitCode: null, spawnError: 'killed before it started' };
+			}
+			inner = spawnProcess(this.options.root, command, args, { ...options, ...r, redact: text => this.redact(text) });
+			for (const text of queued.splice(0)) {
+				inner.write(text);
+			}
+			return inner.exited;
+		});
+		return {
+			get pid() { return inner?.pid; },
+			write: text => inner ? inner.write(text) : void queued.push(text),
+			exited,
+			kill: () => {
+				killed = true;
+				return inner ? inner.kill() : exited;
+			},
+		};
+	}
+
+	private async envWithToolStore(withStore: boolean): Promise<Record<string, string | undefined>> {
+		const bins = this.toolStore && withStore ? await this.toolStore.binPaths() : [];
+		if (!bins.length) {
+			return this.childEnv;
+		}
+		const key = Object.keys(this.childEnv).find(k => k.toUpperCase() === 'PATH') ?? 'PATH';
+		return { ...this.childEnv, [key]: [...bins, this.childEnv[key]].filter(Boolean).join(path.delimiter) };
 	}
 
 	approve(request: ApprovalRequest): Promise<boolean> {

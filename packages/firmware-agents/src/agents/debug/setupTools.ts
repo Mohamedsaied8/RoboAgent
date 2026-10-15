@@ -37,7 +37,7 @@ const inputSchema = {
 	additionalProperties: false,
 } as const;
 
-async function resolveTarget(host: IAgentHost, catalog: ITargetCatalog, input: TargetInput): Promise<TargetDescriptor | undefined> {
+export async function resolveTarget(host: IAgentHost, catalog: ITargetCatalog, input: { readonly part?: string; readonly dir?: string }): Promise<TargetDescriptor | undefined> {
 	if (input.part) {
 		const t = catalog.resolve(input.part);
 		if (!t) {

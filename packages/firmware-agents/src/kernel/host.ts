@@ -18,6 +18,43 @@ export interface IAgentHost {
 	readonly toolStore?: IToolStore;
 	/** Discovers the system layout (programs, udev folders) by search. Optional. */
 	readonly system?: ISystemProbe;
+	/**
+	 * Starts a long-lived program (OpenOCD, GDB) and returns a handle to talk to it. Optional:
+	 * hosts without it cannot run debug sessions.
+	 */
+	spawn?(command: string, args: readonly string[], options?: SpawnOptions): IProcessHandle;
+}
+
+export interface SpawnOptions {
+	/** Relative to the workspace root (default: the root). */
+	readonly cwd?: string;
+	/**
+	 * Absolute working folder outside the workspace instead of `cwd`, e.g. OpenOCD's own scripts
+	 * folder. Hosts accept it only inside the tool store or in a folder trusted for root.
+	 */
+	readonly trustedCwd?: string;
+	readonly env?: Readonly<Record<string, string>>;
+	/** Variables removed from the child's environment (e.g. `OPENOCD_SCRIPTS`). */
+	readonly unsetEnv?: readonly string[];
+	/** Output as it arrives (redacted), split into chunks as the pipe delivers them. */
+	readonly onOutput?: (stream: 'stdout' | 'stderr', chunk: string) => void;
+}
+
+export interface ProcessExit {
+	readonly exitCode: number | null;
+	readonly signal?: string;
+	readonly spawnError?: string;
+}
+
+/** A running program with stdin open. Killing it also stops everything it started. */
+export interface IProcessHandle {
+	readonly pid: number | undefined;
+	/** Writes to the program's stdin; ignored once it has exited. */
+	write(text: string): void;
+	/** Settles when the program has exited (never rejects). */
+	readonly exited: Promise<ProcessExit>;
+	/** SIGTERM to the process group, SIGKILL after a grace period; resolves when it is gone. */
+	kill(): Promise<ProcessExit>;
 }
 
 export interface ProgramSearchOptions {
@@ -45,6 +82,12 @@ export interface ISystemProbe {
 	udevAdminDir(): Promise<string | undefined>;
 	/** The rules udev applies (overrides and /dev/null masks taken into account). */
 	readUdevRules(): Promise<UdevRuleFile[]>;
+	/**
+	 * The first candidate (absolute paths) that is an existing folder the agents' file tools
+	 * cannot change: inside the tool store, or root-owned and not writable by others. Returns its
+	 * real path. Used for program data such as OpenOCD's scripts folder.
+	 */
+	trustedDataDir?(candidates: readonly string[]): Promise<string | undefined>;
 }
 
 /** Paths are relative to the host's workspace root; implementations refuse paths that escape it. */
@@ -121,7 +164,12 @@ export interface ArchiveSpec {
 	/** Published by the vendor; the download is refused when it does not match. */
 	readonly sha256: string;
 	readonly size: number;
-	readonly format: 'tar.gz' | 'tar.xz' | 'zip';
+	/** `file`: a single file (e.g. an SVD), stored as `<binDir>/<fileName>`. */
+	readonly format: 'tar.gz' | 'tar.xz' | 'zip' | 'file';
+	/** For `file`: the name to store it under. */
+	readonly fileName?: string;
+	/** For files from a git repository: the git blob id, checked as well as the SHA-256. */
+	readonly gitBlobSha1?: string;
 	/** Folder with the executables, relative to the archive root (e.g. `xpack-openocd-0.12.0-7/bin`). */
 	readonly binDir: string;
 	/** Whether `binDir` goes on child processes' PATH (false for tools that would shadow others). */

@@ -5,7 +5,7 @@ Per-requirement context, scope, files, and verification. Task status lives in
 
 ---
 
-## REQ-7 — Firmware Agents: Dev · Debug · Test (2026-10-15, in progress — P0 + P1 + debug self-install done)
+## REQ-7 — Firmware Agents: Dev · Debug · Test (2026-10-15, in progress — P0 + P1 + P2a (STM32 debug) done)
 
 **Context.** Three cooperating AI agents for STM32 / ESP32 firmware (with or without FreeRTOS):
 a **Dev** agent (toolchain setup, build, flash, apply change requests), a **Debug** agent
@@ -36,7 +36,7 @@ P3 Test agent + orchestrated bug loop · P4 RoboAgent / CLI / MCP adapters. Task
 `implementation_tasks.md`.
 
 **Decisions.** LLM = OpenRouter (OpenAI-compatible client); tests = GoogleTest + GMock, Unity
-fallback. Still open: validation boards.
+fallback. STM32 validation board: Blue Pill (STM32F103C8T6) + ST-Link V2. Still open: the ESP32 board.
 
 **P0 delivered (2026-10-15).** `packages/firmware-agents/`: kernel (ReAct `Agent`, tools + registry
 views, approval enforced for every non-read tool, typed `MessageBus`, JSON-schema validation with
@@ -80,6 +80,42 @@ Follow-ups (2026-10-15): installs are automatic by default (opt out with `ROBOAG
 no hard-coded system paths (programs, udev folders and the admin folder are found by search; root
 programs must be root-owned along the whole link chain, with no ACLs); the tool store follows the
 platform data folder; `createDefaultToolStore()` (for the P4 hosts) takes over the earlier `~/.roboagent/tools`. Host still lacks `openocd`, `gdb-multiarch`, `ninja`, ESP-IDF toolchain.
+
+**P2a STM32 debug session delivered (2026-10-15, R7.3) — Debug agent.** `IAgentHost.spawn` (long-lived
+processes: no shell, own process group, secret-stripped env; a working folder outside the workspace
+only via `trustedCwd`, accepted by `ISystemProbe.trustedDataDir` when it is in the tool store or
+root-owned). `src/embedded/debug/`: GDB/MI parser and client (tokens, timeouts, cancellation,
+race-free stop waits), OpenOCD server (absolute scripts, run inside OpenOCD's own scripts folder —
+so `source [find …]` never resolves in the project — `bindto 127.0.0.1`, `gdb_port 0`, no Tcl/telnet,
+`gdb_flash_program disable`, `OPENOCD_SCRIPTS` unset), in-process probe lock, `ITargetSession` facade
+(`OpenOcdGdbSession`: run control, hardware breakpoints/watchpoints with budget accounting incl.
+multi-location breakpoints and GDB-deleted ones, memory, registers, GDB expressions, backtrace,
+locals, SVD peripherals, crash decode). GDB runs with `-nx`, `auto-load off` and
+`may-write-memory`/`may-write-registers`/`may-call-functions` off; only the approved write lifts
+`may-write-memory` around itself. Expressions refuse assignments, `++/--`, `$` names other than core
+registers (`$_shell`), and dereferences of literal peripheral addresses. `src/embedded/arch/cortexM.ts`:
+CFSR/HFSR/MMFAR/BFAR decode with meanings, EXC_RETURN stack selection, exception frame read at the
+handler's CFA from GDB's unwinder (correct for handlers that push, e.g. -O0), faulting code and caller
+resolved to source lines, FPB/DWT budget. `src/embedded/svd/`: dependency-free XML reader (no DTDs),
+SVD parser (inheritance, `derivedFrom` merge, `dim` lists/arrays incl. letter ranges, clusters, one
+expansion budget per file and nesting cap against hostile files), decoder (enums, changed-from-reset,
+side-effect registers not read), 12 pinned STM32 SVDs from cmsis-svd-data at one commit (SHA-256 +
+git blob id; `raw.githubusercontent.com` allowed only under that commit) fetched by `ensure_debug_tools`
+as an optional dependency. `FirmwareDebugAgent` (`fw-debug`): read-only file tools, setup tools and 21
+debug tools; `start_session`, `reset`, `write_memory` ask (`hardware`); `write_memory` refuses flash,
+option bytes, every STM32 FLASH controller, DBGMCU and their bit-band aliases, binds the approved
+address to the write; `read_memory` refuses SVD side-effect registers and, without an SVD, peripheral
+space; `investigate()` returns `DebugFindings` and always ends the session.
+**Verified on hardware:** Blue Pill + ST-Link V2: attach, breakpoint, watch expressions, registers,
+memory, RCC/GPIOC/GPIOA decode, watchpoint, seeded BusFault→HardFault decoded to
+`read_sensor_bus (main.c:57)` called from `main`, at -Og and -O0 (`FWAGENT_HW=1`, reflashes the board).
+The GDB/MI layer is also tested by replaying a session recorded on that board. Reviews: independent
+code + security reviews, three rounds; every confirmed finding fixed with a regression test.
+Deferred: side-effect reads through pointer variables in expressions (only literal peripheral
+addresses are refused); the localhost GDB port is reachable by other local users before GDB connects
+(`gdb_port pipe` would need GDB to start OpenOCD through a shell); OpenOcdFlasher (P1) still passes
+relative script names from the project folder — move it onto `locateDebugStack`; Fedora's multi-arch
+`gdb`; `objcopy` on RAM-placed load sections.
 
 ---
 

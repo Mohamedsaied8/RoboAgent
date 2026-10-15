@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { createHash } from 'crypto';
-import { IAgentHost, InstalledTool, PlatformId } from '../kernel/host';
+import { ArchiveSpec, IAgentHost, InstalledTool, PlatformId } from '../kernel/host';
 import { archiveFor, TOOL_MANIFEST, ToolId, validateArchiveSpec } from './manifest';
 import { grantsInRuleFile, PROBES, probeCovered, ProbeId, UdevGrants } from './probes';
 
@@ -35,6 +35,8 @@ export interface DependencyStatus {
 	readonly manualStep?: string;
 	/** Done, but only effective after something else (e.g. logging in again). */
 	readonly pending?: string;
+	/** Nice to have: when missing, the stack still works (reported, but `ok` overall stays true). */
+	readonly optional?: boolean;
 }
 
 export interface InstallOutcome {
@@ -175,6 +177,35 @@ export class ExecutableDependency implements IDependency {
 			}
 		}
 		return undefined;
+	}
+}
+
+/**
+ * A pinned data file in the tool store (e.g. the target's SVD). Optional for the debug stack:
+ * when it cannot be fetched, the session still works, only without decoded peripherals.
+ */
+export class PinnedFileDependency implements IDependency {
+	constructor(readonly id: string, readonly label: string, readonly spec: ArchiveSpec) { }
+
+	async check(ctx: DependencyContext): Promise<DependencyStatus> {
+		const found = await ctx.host.toolStore?.find(this.spec.id, this.spec.version);
+		if (found) {
+			return { id: this.id, label: this.label, ok: true, detail: `${this.spec.fileName} in the tool store`, source: 'tool-store', remedy: 'none', optional: true };
+		}
+		return ctx.host.toolStore
+			? { id: this.id, label: this.label, ok: false, detail: `${this.spec.fileName} not downloaded yet (optional: without it peripherals are not decoded)`, remedy: 'user-space', optional: true }
+			: { id: this.id, label: this.label, ok: false, detail: 'no tool store on this host', remedy: 'manual', manualStep: `Download ${this.spec.url} and pass its workspace path as "svd".`, optional: true };
+	}
+
+	async installUserSpace(ctx: DependencyContext): Promise<InstallOutcome> {
+		const store = ctx.host.toolStore;
+		const invalid = validateArchiveSpec(this.spec);
+		if (!store || invalid) {
+			return { id: this.id, ok: false, action: 'needs-user', detail: invalid ? `Refusing the pinned download: ${invalid}` : 'No tool store on this host.' };
+		}
+		ctx.host.progress(`Downloading ${this.spec.fileName} (${Math.max(1, Math.round(this.spec.size / 1e6))} MB) into ${store.location}`);
+		await store.install(this.spec, ctx.signal ? { signal: ctx.signal } : {});
+		return { id: this.id, ok: true, action: 'downloaded', detail: `${this.spec.fileName} (pinned, SHA-256 and git blob id verified)` };
 	}
 }
 

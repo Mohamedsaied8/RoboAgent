@@ -1,0 +1,229 @@
+> 1-gdb-set mi-async on
+< =thread-group-added,id="i1"
+< =cmd-param-changed,param="auto-load gdb-scripts",value="off"
+< =cmd-param-changed,param="auto-load local-gdbinit",value="off"
+< (gdb) 
+< 1^done
+< (gdb) 
+> 2-gdb-set confirm off
+< 2^done
+< (gdb) 
+> 3-gdb-set pagination off
+< 3^done
+< (gdb) 
+> 4-gdb-set width 0
+< 4^done
+< (gdb) 
+> 5-gdb-set print pretty off
+< 5^done
+< (gdb) 
+> 6-gdb-set print elements 64
+< 6^done
+< (gdb) 
+> 7-gdb-set mem inaccessible-by-default off
+< 7^done
+< (gdb) 
+> 8-gdb-set may-write-memory off
+< 8^done
+< (gdb) 
+> 9-gdb-set may-write-registers off
+< 9^done
+< (gdb) 
+> 10-gdb-set may-call-functions off
+< 10^done
+< (gdb) 
+> 11-file-exec-and-symbols "fw/bluepill.elf"
+< 11^done
+< (gdb) 
+> 12-target-select remote 127.0.0.1:45829
+< =thread-group-started,id="i1",pid="42000"
+< =thread-created,id="1",group-id="i1"
+< ~"delay (n=n@entry=200000) at Src/main.c:46\n"
+< ~"46\t\twhile (n--) { }\n"
+< *stopped,frame={addr="0x08000024",func="delay",args=[{name="n",value="200000"},{name="n@entry",value="200000"}],file="Src/main.c",fullname="/work/fw/Src/main.c",line="46",arch="armv7"},thread-id="1",stopped-threads="all"
+< 12^connected
+< (gdb) 
+> 13-break-insert -h "toggle_led"
+< 13^done,bkpt={number="1",type="hw breakpoint",disp="keep",enabled="y",addr="0x08000032",func="toggle_led",file="Src/main.c",fullname="/work/fw/Src/main.c",line="51",thread-groups=["i1"],times="0",original-location="toggle_led"}
+< (gdb) 
+> 14-exec-continue
+< 14^running
+< *running,thread-id="all"
+< (gdb) 
+< =breakpoint-modified,bkpt={number="1",type="hw breakpoint",disp="keep",enabled="y",addr="0x08000032",func="toggle_led",file="Src/main.c",fullname="/work/fw/Src/main.c",line="51",thread-groups=["i1"],times="1",original-location="toggle_led"}
+< ~"\n"
+< ~"Breakpoint 1, toggle_led () at Src/main.c:51\n"
+< ~"51\t\tGPIOC_ODR ^= (1u << 13);\n"
+< *stopped,reason="breakpoint-hit",disp="keep",bkptno="1",frame={addr="0x08000032",func="toggle_led",args=[],file="Src/main.c",fullname="/work/fw/Src/main.c",line="51",arch="armv7"},thread-id="1",stopped-threads="all"
+> 15-stack-list-frames 0 15
+< 15^done,stack=[frame={level="0",addr="0x08000032",func="toggle_led",file="Src/main.c",fullname="/work/fw/Src/main.c",line="51",arch="armv7"},frame={level="1",addr="0x0800007c",func="main",file="Src/main.c",fullname="/work/fw/Src/main.c",line="67",arch="armv7"}]
+< (gdb) 
+> 16-data-evaluate-expression "counter"
+< 16^done,value="4"
+< (gdb) 
+> 17-data-evaluate-expression "sensor"
+< 17^done,value="{id = 7, reading = 4}"
+< (gdb) 
+> 18-data-evaluate-expression "$pc"
+< 18^done,value="0x8000032 <toggle_led>"
+< (gdb) 
+> 19-data-list-register-names
+< 19^done,register-names=["r0","r1","r2","r3","r4","r5","r6","r7","r8","r9","r10","r11","r12","sp","lr","pc","","","","","","","","","","xpsr","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","","msp","psp","primask","basepri","faultmask","control"]
+< (gdb) 
+> 20-data-list-register-values x 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 25 91 92 93 94 95 96
+< 20^done,register-values=[{number="0",value="0x30d40"},{number="1",value="0x20000004"},{number="2",value="0x20000000"},{number="3",value="0x4"},{number="4",value="0x20000004"},{number="5",value="0x8"},{number="6",value="0x4c11db7"},{number="7",value="0x20004fc0"},{number="8",value="0x355bffce"},{number="9",value="0xddfed76e"},{number="10",value="0x3dd9ceef"},{number="11",value="0x7bffa37d"},{number="12",value="0xdfa7fdf5"},{number="13",value="0x20004ff0"},{number="14",value="0x800007d"},{number="15",value="0x8000032"},{number="25",value="0x1000000"},{number="91",value="0x20004ff0"},{number="92",value="0xb947cdb8"},{number="93",value="0x0"},{number="94",value="0x0"},{number="95",value="0x0"},{number="96",value="0x0"}]
+< (gdb) 
+> 21-data-read-memory-bytes 0x40021000 4
+< 21^done,memory=[{begin="0x40021000",offset="0x00000000",end="0x40021004",contents="83340000"}]
+< (gdb) 
+> 22-data-read-memory-bytes 0x40021004 4
+< 22^done,memory=[{begin="0x40021004",offset="0x00000000",end="0x40021008",contents="00000000"}]
+< (gdb) 
+> 23-data-read-memory-bytes 0x40021008 4
+< 23^done,memory=[{begin="0x40021008",offset="0x00000000",end="0x4002100c",contents="00000000"}]
+< (gdb) 
+> 24-data-read-memory-bytes 0x4002100C 4
+< 24^done,memory=[{begin="0x4002100c",offset="0x00000000",end="0x40021010",contents="00000000"}]
+< (gdb) 
+> 25-data-read-memory-bytes 0x40021010 4
+< 25^done,memory=[{begin="0x40021010",offset="0x00000000",end="0x40021014",contents="00000000"}]
+< (gdb) 
+> 26-data-read-memory-bytes 0x40021014 4
+< 26^done,memory=[{begin="0x40021014",offset="0x00000000",end="0x40021018",contents="14000000"}]
+< (gdb) 
+> 27-data-read-memory-bytes 0x40021018 4
+< 27^done,memory=[{begin="0x40021018",offset="0x00000000",end="0x4002101c",contents="10000000"}]
+< (gdb) 
+> 28-data-read-memory-bytes 0x4002101C 4
+< 28^done,memory=[{begin="0x4002101c",offset="0x00000000",end="0x40021020",contents="00000000"}]
+< (gdb) 
+> 29-data-read-memory-bytes 0x40021020 4
+< 29^done,memory=[{begin="0x40021020",offset="0x00000000",end="0x40021024",contents="00000000"}]
+< (gdb) 
+> 30-data-read-memory-bytes 0x40021024 4
+< 30^done,memory=[{begin="0x40021024",offset="0x00000000",end="0x40021028",contents="0000001c"}]
+< (gdb) 
+> 31-data-read-memory-bytes 0x40011000 4
+< 31^done,memory=[{begin="0x40011000",offset="0x00000000",end="0x40011004",contents="44444444"}]
+< (gdb) 
+> 32-data-read-memory-bytes 0x40011004 4
+< 32^done,memory=[{begin="0x40011004",offset="0x00000000",end="0x40011008",contents="44442444"}]
+< (gdb) 
+> 33-data-read-memory-bytes 0x40011008 4
+< 33^done,memory=[{begin="0x40011008",offset="0x00000000",end="0x4001100c",contents="00200000"}]
+< (gdb) 
+> 34-data-read-memory-bytes 0x4001100C 4
+< 34^done,memory=[{begin="0x4001100c",offset="0x00000000",end="0x40011010",contents="00200000"}]
+< (gdb) 
+> 35-data-read-memory-bytes 0x40011018 4
+< 35^done,memory=[{begin="0x40011018",offset="0x00000000",end="0x4001101c",contents="00000000"}]
+< (gdb) 
+> 36-exec-next
+< 36^running
+< *running,thread-id="all"
+< (gdb) 
+< *stopped,reason="end-stepping-range",frame={addr="0x0800007c",func="main",args=[],file="Src/main.c",fullname="/work/fw/Src/main.c",line="68",arch="armv7"},thread-id="1",stopped-threads="all"
+> 37-exec-step
+< 37^running
+< *running,thread-id="all"
+< (gdb) 
+< *stopped,reason="end-stepping-range",frame={addr="0x08000020",func="delay",args=[{name="n",value="200000"},{name="n@entry",value="200000"}],file="Src/main.c",fullname="/work/fw/Src/main.c",line="45",arch="armv7"},thread-id="1",stopped-threads="all"
+> 38-exec-finish
+< ~"Note: automatically using hardware breakpoints for read-only addresses.\n"
+< 38^running
+< *running,thread-id="all"
+< (gdb) 
+< *stopped,reason="function-finished",frame={addr="0x08000082",func="main",args=[],file="Src/main.c",fullname="/work/fw/Src/main.c",line="69",arch="armv7"},thread-id="1",stopped-threads="all"
+> 39-break-delete 1
+< 39^done
+< (gdb) 
+> 40-break-watch -a "fault_trigger"
+< 40^done,hw-awpt={number="2",exp="fault_trigger"}
+< (gdb) 
+> 41-break-delete 2
+< 41^done
+< (gdb) 
+> 42-data-evaluate-expression "(unsigned long)&fault_trigger"
+< 42^done,value="536870920"
+< (gdb) 
+> 43-gdb-set may-write-memory on
+< 43^done
+< (gdb) 
+> 44-data-write-memory-bytes 0x20000008 01000000
+< 44^done
+< (gdb) 
+> 45-gdb-set may-write-memory off
+< 45^done
+< (gdb) 
+> 46-data-evaluate-expression "fault_trigger"
+< 46^done,value="1"
+< (gdb) 
+> 47-exec-continue
+< 47^running
+< *running,thread-id="all"
+< (gdb) 
+> 48-exec-interrupt
+< 48^done
+< (gdb) 
+< ~"\nProgram"
+< ~" received signal SIGINT, Interrupt.\n"
+< ~"HardFault_Handler () at Src/main.c:31\n"
+< ~"31\t\tfor (;;) { }\n"
+< *stopped,reason="signal-received",signal-name="SIGINT",signal-meaning="Interrupt",frame={addr="0x0800001c",func="HardFault_Handler",args=[],file="Src/main.c",fullname="/work/fw/Src/main.c",line="31",arch="armv7"},thread-id="1",stopped-threads="all"
+> 49-data-read-memory-bytes 0xE000ED24 28
+< 49^done,memory=[{begin="0xe000ed24",offset="0x00000000",end="0xe000ed40",contents="00000000008200000000004000000000000000600000006000000000"}]
+< (gdb) 
+> 50-data-list-register-values x 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 25 91 92 93 94 95 96
+< 50^done,register-values=[{number="0",value="0x30d40"},{number="1",value="0x20000004"},{number="2",value="0xffffffff"},{number="3",value="0x60000000"},{number="4",value="0x20000004"},{number="5",value="0x8"},{number="6",value="0x4c11db7"},{number="7",value="0x20004fc0"},{number="8",value="0x355bffce"},{number="9",value="0xddfed76e"},{number="10",value="0x3dd9ceef"},{number="11",value="0x7bffa37d"},{number="12",value="0xdfa7fdf5"},{number="13",value="0x20004fd0"},{number="14",value="0xfffffff9"},{number="15",value="0x800001c"},{number="25",value="0x21000003"},{number="91",value="0x20004fd0"},{number="92",value="0xb947cdb8"},{number="93",value="0x0"},{number="94",value="0x0"},{number="95",value="0x0"},{number="96",value="0x0"}]
+< (gdb) 
+> 51-interpreter-exec console "info frame"
+< ~"Stack level 0, frame at 0x20004fd0:\n"
+< ~" pc = 0x800001c in HardFault_Handler (Src/main.c:31); saved pc = 0xfffffff9\n"
+< ~" source language c.\n"
+< ~" Arglist at 0x20004fd0, args: \n"
+< ~" Locals at 0x20004fd0, Previous frame's sp is 0x20004fd0\n"
+< 51^done
+< (gdb) 
+> 52-data-read-memory-bytes 0x20004FD0 32
+< 52^done,memory=[{begin="0x20004fd0",offset="0x00000000",end="0x20004ff0",contents="400d030004000020ffffffff00000060f5fda7df8d0000084800000800000021"}]
+< (gdb) 
+> 53-stack-list-frames 0 15
+< 53^done,stack=[frame={level="0",addr="0x0800001c",func="HardFault_Handler",file="Src/main.c",fullname="/work/fw/Src/main.c",line="31",arch="armv7"}]
+< (gdb) 
+> 54-interpreter-exec console "info line *0x08000048"
+< ~"Line 57 of \"Src/main.c\" starts at address 0x8000044 <read_sensor_bus> and ends at 0x800004a <read_sensor_bus+6>.\n"
+< 54^done
+< (gdb) 
+> 55-interpreter-exec console "info line *0x0800008C"
+< ~"Line 70 of \"Src/main.c\" starts at address 0x800008c <main+64> and ends at 0x80000a4 <Reset_Handler>.\n"
+< 55^done
+< (gdb) 
+> 56-interpreter-exec console "monitor reset halt"
+< @"[stm32f1x.cpu] halted due to debug-request, current mode: Thread \n"
+< @"xPSR: 0x01000000 pc: 0x080000a4 msp: 0x20005000\n"
+< 56^done
+< (gdb) 
+> 57-interpreter-exec console "maintenance flush register-cache"
+< ~"Register cache flushed.\n"
+< 57^done
+< (gdb) 
+> 58-data-evaluate-expression "$pc"
+< 58^done,value="0x80000a4 <Reset_Handler>"
+< (gdb) 
+> 59-data-read-memory-bytes 0xE000ED24 28
+< 59^done,memory=[{begin="0xe000ed24",offset="0x00000000",end="0xe000ed40",contents="00000000000000000000000000000000f8ed00e0f8ed00e000000000"}]
+< (gdb) 
+> 60-data-list-register-values x 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 25 91 92 93 94 95 96
+< 60^done,register-values=[{number="0",value="0x30d40"},{number="1",value="0x20000004"},{number="2",value="0xffffffff"},{number="3",value="0x60000000"},{number="4",value="0x20000004"},{number="5",value="0x8"},{number="6",value="0x4c11db7"},{number="7",value="0x20004fc0"},{number="8",value="0x355bffce"},{number="9",value="0xddfed76e"},{number="10",value="0x3dd9ceef"},{number="11",value="0x7bffa37d"},{number="12",value="0xdfa7fdf5"},{number="13",value="0x20005000"},{number="14",value="0xffffffff"},{number="15",value="0x80000a4"},{number="25",value="0x1000000"},{number="91",value="0x20005000"},{number="92",value="0xb947cdb8"},{number="93",value="0x0"},{number="94",value="0x0"},{number="95",value="0x0"},{number="96",value="0x0"}]
+< (gdb) 
+> 61-stack-list-frames 0 15
+< 61^done,stack=[frame={level="0",addr="0x080000a4",func="Reset_Handler",file="Src/main.c",fullname="/work/fw/Src/main.c",line="21",arch="armv7"},frame={level="1",addr="0xffffffff",func="<signal handler called>"}]
+< (gdb) 
+> 62-target-detach
+< =thread-exited,id="1",group-id="i1"
+< =thread-group-exited,id="i1"
+< ~"[Inferior 1 (Remote target) detached]\n"
+< 62^done
+< (gdb) 
+> 63-gdb-exit
+< 63^exit

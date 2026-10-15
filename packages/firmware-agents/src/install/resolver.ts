@@ -5,7 +5,8 @@
 
 import { IAgentHost, PlatformId } from '../kernel/host';
 import { TargetDescriptor } from '../embedded/target';
-import { DependencyContext, DependencyStatus, ExecutableDependency, HostOs, IDependency, InstallOutcome, ProbeAccessDependency, SerialAccessDependency, SystemInstallOptions } from './dependencies';
+import { svdSpecFor } from '../embedded/svd/svdManifest';
+import { DependencyContext, DependencyStatus, ExecutableDependency, HostOs, IDependency, InstallOutcome, PinnedFileDependency, ProbeAccessDependency, SerialAccessDependency, SystemInstallOptions } from './dependencies';
 import { archiveFor, TOOL_MANIFEST, ToolId } from './manifest';
 import { ProbeId } from './probes';
 
@@ -22,6 +23,7 @@ const ESP_MANUAL = 'Install the ESP-IDF tools (https://docs.espressif.com/projec
 /** The dependencies of the debug stack for a target (default: STM32 with ST-Link). */
 export function debugRequirements(options: DebugRequirementsOptions = {}): IDependency[] {
 	const t = options.target;
+	const svd = t?.vendor === 'stm32' ? svdSpecFor(t.part) : undefined;
 	if (t?.vendor === 'esp32') {
 		const gdbArchive = t.arch === 'riscv' ? 'riscv32-esp-elf-gdb' : 'xtensa-esp-elf-gdb';
 		const gdbName = t.arch === 'riscv' ? 'riscv32-esp-elf-gdb' : `xtensa-${t.part}-elf-gdb`;
@@ -37,6 +39,7 @@ export function debugRequirements(options: DebugRequirementsOptions = {}): IDepe
 		new ExecutableDependency({ id: 'openocd', label: 'OpenOCD', commands: ['openocd'], archive: 'xpack-openocd', manualHint: OPENOCD_MANUAL }),
 		new ExecutableDependency({ id: 'gdb', label: 'GDB for Arm Cortex-M', commands: ['arm-none-eabi-gdb', 'gdb-multiarch'], archive: 'xpack-arm-none-eabi-gcc', manualHint: ARM_GDB_MANUAL }),
 		new ProbeAccessDependency(options.probes ?? ['stlink']),
+		...svd ? [new PinnedFileDependency('svd', `Register descriptions (SVD) for ${t!.part}`, svd)] : [],
 	];
 }
 
@@ -99,7 +102,7 @@ export class DependencyResolver {
 		for (const d of deps) {
 			statuses.push(await d.check(ctx));
 		}
-		return { ok: statuses.every(s => s.ok), statuses, next: nextStep(statuses) };
+		return { ok: statuses.every(s => s.ok || s.optional), statuses, next: nextStep(statuses) };
 	}
 
 	/** Installs every missing dependency that has a user-space install; touches nothing outside the tool store. */
@@ -140,10 +143,12 @@ export class DependencyResolver {
 }
 
 function nextStep(statuses: readonly DependencyStatus[]): string {
-	const missing = statuses.filter(s => !s.ok);
+	const missing = statuses.filter(s => !s.ok && !s.optional);
+	const optional = statuses.filter(s => !s.ok && s.optional);
 	const pending = statuses.filter(s => s.pending).map(s => `${s.label}: ${s.pending}`);
+	const extras = optional.length ? [`Optional, not installed: ${optional.map(s => s.label).join(', ')}${optional.some(s => s.remedy === 'user-space') ? ' (ensure_debug_tools can download it)' : ''}.`] : [];
 	if (!missing.length) {
-		return ['Everything the debug stack needs is installed.', ...pending].join(' ');
+		return ['Everything the debug stack needs is installed.', ...extras, ...pending].join(' ');
 	}
 	const parts: string[] = [];
 	const user = missing.filter(s => s.remedy === 'user-space');
@@ -158,18 +163,21 @@ function nextStep(statuses: readonly DependencyStatus[]): string {
 	if (manual.length) {
 		parts.push(...manual.map(s => `${s.label}: ${s.manualStep ?? 'install it manually'}`));
 	}
-	return parts.join(' ');
+	return [...parts, ...extras].join(' ');
 }
 
 /** One line per download the user-space install could make, for approval prompts. */
 export function describeDownloads(deps: readonly IDependency[], platform: PlatformId | undefined): string[] {
 	const ids = new Set<ToolId>();
+	const files: string[] = [];
 	for (const d of deps) {
 		if (d instanceof ExecutableDependency && d.archive) {
 			ids.add(d.archive);
+		} else if (d instanceof PinnedFileDependency) {
+			files.push(`${d.spec.fileName} (${Math.max(1, Math.round(d.spec.size / 1e6))} MB)`);
 		}
 	}
-	return [...ids].map(id => {
+	return [...[...ids].map(id => {
 		const tool = TOOL_MANIFEST[id];
 		// Without a platform (e.g. in an approval prompt) show the largest variant as "about".
 		const size = platform ? archiveFor(id, platform)?.size : Math.max(...Object.values(tool.platforms).map(p => p.size));
@@ -177,5 +185,5 @@ export function describeDownloads(deps: readonly IDependency[], platform: Platfo
 			return `${tool.vendor} ${tool.version} (no pinned download for this platform)`;
 		}
 		return `${tool.vendor} ${tool.version} (${platform ? '' : 'about '}${Math.max(1, Math.round(size / 1e6))} MB)`;
-	});
+	}), ...files];
 }

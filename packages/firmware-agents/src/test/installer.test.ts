@@ -353,10 +353,10 @@ suite('debug setup tools', () => {
 		]);
 		await new SetupAgent(llm, host).run('set up debugging');
 		assert.deepStrictEqual(host.approvals.map(a => [a.toolName, a.category]), [['ensure_debug_tools', 'install'], ['install_probe_access', 'system']]);
-		assert.match(host.approvals[0].summary, /^For STM32F103C8T6: download xPack OpenOCD .* 0\.12\.0-7 \(3 MB\); xPack GNU Arm Embedded GCC .* 15\.2\.1-1\.1 \(307 MB\) into \/store/);
+		assert.match(host.approvals[0].summary, /^For STM32F103C8T6: download xPack OpenOCD .* 0\.12\.0-7 \(3 MB\); xPack GNU Arm Embedded GCC .* 15\.2\.1-1\.1 \(307 MB\); STM32F103xx\.svd \(1 MB\) into \/store/);
 		assert.match(host.approvals[1].summary, /^For esp32s3, as root: write OpenOCD's udev rules \(xpack-openocd 0\.12\.0-7, after checking their pinned SHA-256\) to \/udev-admin\/rules.d\/60-roboagent-openocd.rules and reload udev; add mohamed to the dialout group/);
 		const checked = JSON.parse((llm.requests[1].messages.find(m => m.role === 'tool') as { content: string }).content);
-		assert.deepStrictEqual([checked.target, checked.ok, checked.statuses.map((s: { id: string }) => s.id)], ['STM32F103C8T6', false, ['openocd', 'gdb', 'probe-usb-access']]);
+		assert.deepStrictEqual([checked.target, checked.ok, checked.statuses.map((s: { id: string; optional?: boolean }) => `${s.id}${s.optional ? '?' : ''}`)], ['STM32F103C8T6', false, ['openocd', 'gdb', 'probe-usb-access', 'svd?']]);
 		assert.match(checked.next, /ensure_debug_tools can download OpenOCD, GDB for Arm Cortex-M/);
 	});
 
