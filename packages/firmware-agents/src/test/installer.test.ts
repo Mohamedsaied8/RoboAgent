@@ -5,7 +5,7 @@
 
 import * as assert from 'assert';
 import { createHash } from 'crypto';
-import { NodeAgentHost } from '../adapters/node/nodeAgentHost';
+import { installPolicyFromEnv, NodeAgentHost } from '../adapters/node/nodeAgentHost';
 import { createDebugSetupTools } from '../agents/debug/setupTools';
 import { DefaultTargetCatalog } from '../embedded/target';
 import { ExecutableDependency, ProbeAccessDependency, SerialAccessDependency } from '../install/dependencies';
@@ -385,6 +385,15 @@ suite('debug setup tools', () => {
 		assert.deepStrictEqual([await unattended.approve({ ...base, category: 'install' }), await unattended.approve({ ...base, category: 'hardware', risk: 'hardware' })], [true, false]);
 		// Only the two pinned-download tools are covered; any other tool claiming "install" still asks.
 		assert.strictEqual(await unattended.approve({ ...base, toolName: 'some_new_tool', category: 'install' }), false);
+	});
+
+	test('$ROBOAGENT_INSTALL_POLICY opts out: "ask" asks, a typo also asks, unset means auto', async () => {
+		const base = { agentId: 'a', toolName: 'ensure_debug_tools', risk: 'write' as const, category: 'install' as const, summary: 's', input: {} };
+		const host = (value?: string) => new NodeAgentHost({ root: '.', env: value === undefined ? {} : { ROBOAGENT_INSTALL_POLICY: value }, write: () => { } });
+		assert.deepStrictEqual([
+			await host().approve(base), await host('auto').approve(base), await host('ask').approve(base), await host('ASK').approve(base), await host('aut0').approve(base),
+		], [true, true, false, false, false]);
+		assert.deepStrictEqual([installPolicyFromEnv(undefined), installPolicyFromEnv(''), installPolicyFromEnv(' Auto '), installPolicyFromEnv('no')], ['auto', 'auto', 'auto', 'ask']);
 	});
 
 	test('the "auto" install policy approves installs without asking, but never root steps', async () => {

@@ -20,6 +20,29 @@ export interface NodeSystemProbeOptions {
 	readonly platform?: NodeJS.Platform;
 }
 
+const LS_MODE_LINE = /^[-dlbcpsD?][-rwxsStTlL]{9}([.+@]?)\s/;
+
+/**
+ * One flag per `ls -ld` line: true when the line carries an ACL marker (`+`), and also when the
+ * line does not look like `ls` output at all (a fake `ls` must not read as "no ACL").
+ */
+export function aclFlags(lsOutput: string): boolean[] {
+	return lsOutput.split('\n').filter(l => l.trim()).map(l => {
+		const m = LS_MODE_LINE.exec(l);
+		return !m || m[1] === '+';
+	});
+}
+
+/**
+ * macOS `ls -lde`: `@` (extended attributes) replaces `+` when a file has both, so ACLs are read
+ * from the numbered entries `ls -e` prints under the file (` 0: group:staff allow write`).
+ */
+export function aclFromDarwinLs(lsOutput: string): boolean {
+	const lines = lsOutput.split('\n').filter(l => l.trim());
+	const first = lines[0] && LS_MODE_LINE.exec(lines[0]);
+	return !first || first[1] === '+' || lines.slice(1).some(l => /^\s*\d+:\s/.test(l));
+}
+
 /**
  * udev's rule folders as compiled into udevadm: a contiguous run of NUL-separated strings such as
  * `/etc/udev/rules.d\0/run/udev/rules.d\0…/usr/lib/udev/rules.d`, in priority order. Taking the
@@ -36,6 +59,8 @@ export function rulesDirList(binary: string): string[] {
 	return best;
 }
 const MAX_BINARY_BYTES = 64 * 1024 * 1024;
+/** How long an ACL answer is reused (long-running hosts re-check now and then). */
+const ACL_CACHE_MS = 5 * 60_000;
 
 /**
  * {@link ISystemProbe} for Node: nothing about the system layout is hard-coded. Programs are
@@ -187,11 +212,11 @@ export class NodeSystemProbe implements ISystemProbe {
 	 * Follows `file` link by link: the folder holding each link (resolved) and the final file
 	 * must all be root-trusted.
 	 */
-	private async isLinkChainTrusted(file: string): Promise<boolean> {
+	private async isLinkChainTrusted(file: string, trusted: (p: string) => Promise<boolean> = p => this.isRootTrusted(p)): Promise<boolean> {
 		let current = file;
 		for (let hops = 0; hops < 40; hops++) {
 			const dir = await fs.realpath(path.dirname(current)).catch(() => undefined);
-			if (!dir || !await this.isRootTrusted(dir)) {
+			if (!dir || !await trusted(dir)) {
 				return false;
 			}
 			const stat = await fs.lstat(current).catch(() => undefined);
@@ -199,7 +224,7 @@ export class NodeSystemProbe implements ISystemProbe {
 				return false;
 			}
 			if (!stat.isSymbolicLink()) {
-				return this.isRootTrusted(path.join(dir, path.basename(current)));
+				return trusted(path.join(dir, path.basename(current)));
 			}
 			current = path.resolve(dir, await fs.readlink(current));
 		}
@@ -214,18 +239,87 @@ export class NodeSystemProbe implements ISystemProbe {
 		if (this.platform === 'win32') {
 			return false;
 		}
+		const chain: string[] = [];
 		let p = await fs.realpath(file).catch(() => undefined);
 		while (p) {
 			const stat = await fs.stat(p).catch(() => undefined);
 			if (!stat || stat.uid !== 0 || (stat.mode & 0o022) !== 0) {
 				return false;
 			}
+			chain.push(p);
 			const parent = path.dirname(p);
 			if (parent === p) {
-				return true;
+				return !await this.anyHasAcl(chain);
 			}
 			p = parent;
 		}
 		return false;
+	}
+
+	/**
+	 * Access control lists can grant write access the mode bits do not show (macOS and NFSv4 ACLs;
+	 * on Linux a POSIX ACL with a writable entry also shows in the group bits). Any ACL on the
+	 * chain makes it untrusted. `ls` marks such paths with `+` after the mode. Without a trusted
+	 * `ls`: on Linux the mode bits decide (see below); elsewhere the answer is "has ACL".
+	 */
+	protected async anyHasAcl(paths: readonly string[]): Promise<boolean> {
+		const ls = await this.trustedLs();
+		const darwin = this.platform === 'darwin';
+		if (!ls && this.platform === 'linux') {
+			// On Linux a POSIX ACL that grants write also shows in the group bits, which the caller
+			// has already checked; without an `ls` to read markers, the mode bits are the answer.
+			return false;
+		}
+		for (const p of paths) {
+			const cached = this.aclCache.get(p);
+			if (!cached || Date.now() - cached.at > ACL_CACHE_MS) {
+				// One path per call: `ls` sorts its arguments, so lines would not match the order.
+				const r = ls ? await runProcess(os.tmpdir(), ls, [darwin ? '-lde' : '-ld', '--', p], { timeoutMs: 10_000, baseEnv: { ...this.env, LC_ALL: 'C' } }) : undefined;
+				const acl = r?.exitCode !== 0 || !r ? true : darwin ? aclFromDarwinLs(r.stdout) : aclFlags(r.stdout)[0] ?? true;
+				this.aclCache.set(p, { acl, at: Date.now() });
+			}
+			if (this.aclCache.get(p)!.acl) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private readonly aclCache = new Map<string, { acl: boolean; at: number }>();
+	private lsPath?: Promise<string | undefined>;
+
+	/**
+	 * `ls` for the ACL check itself, held to the same standard as root programs except the ACL
+	 * check (which it implements): every link on the way and the final file root-owned and not
+	 * writable by others, and the real file must actually be `ls`.
+	 */
+	private trustedLs(): Promise<string | undefined> {
+		this.lsPath ??= (async () => {
+			for (const dir of await this.searchDirs({ systemOnly: true })) {
+				const candidate = path.join(dir, 'ls');
+				if (!await this.isExecutable(candidate)) {
+					continue;
+				}
+				// Multi-call binaries (BusyBox) are fine: the path is run under the name `ls`, and
+				// output that is not `ls` output counts as "has an ACL" anyway.
+				if (await this.isLinkChainTrusted(candidate, p => this.modeTrusted(p))) {
+					return candidate;
+				}
+			}
+			return undefined;
+		})();
+		return this.lsPath;
+	}
+
+	private async modeTrusted(file: string): Promise<boolean> {
+		for (let p = file; ; p = path.dirname(p)) {
+			const stat = await fs.stat(p).catch(() => undefined);
+			if (!stat || stat.uid !== 0 || (stat.mode & 0o022) !== 0) {
+				return false;
+			}
+			if (path.dirname(p) === p) {
+				return true;
+			}
+		}
 	}
 }

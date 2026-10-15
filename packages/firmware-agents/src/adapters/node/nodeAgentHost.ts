@@ -36,12 +36,19 @@ export interface NodeAgentHostOptions {
 	 * `auto` (default): tool installs into the tool store (category `install`: pinned,
 	 * hash-verified, user space only) are approved without asking. `ask`: they go to `approve`
 	 * like everything else. Root steps (`system`), edits, builds and hardware always ask.
+	 * When not given, `$ROBOAGENT_INSTALL_POLICY` decides (`ask` or `auto`; anything else → `ask`).
 	 */
 	readonly installPolicy?: 'ask' | 'auto';
 	/** Tools whose `install` approvals the `auto` policy covers (default: the two pinned-download tools). */
 	readonly autoInstallTools?: readonly string[];
 	/** System layout discovery (default: {@link NodeSystemProbe} on this machine). */
 	readonly system?: ISystemProbe;
+}
+
+/** `$ROBOAGENT_INSTALL_POLICY`: unset or empty → `auto`; `ask`/`auto` as given; any other value → `ask` (the safe reading of a typo). */
+export function installPolicyFromEnv(value: string | undefined): 'ask' | 'auto' {
+	const v = value?.trim().toLowerCase();
+	return !v || v === 'auto' ? 'auto' : 'ask';
 }
 
 /** The only tools that download pinned, hash-verified archives into the tool store. */
@@ -85,10 +92,12 @@ export class NodeAgentHost implements IAgentHost {
 	readonly fs: IFileSystem;
 	readonly toolStore?: IToolStore;
 	readonly system: ISystemProbe;
+	readonly installPolicy: 'ask' | 'auto';
 	private readonly childEnv: Record<string, string | undefined>;
 
 	constructor(private readonly options: NodeAgentHostOptions) {
 		this.fs = new NodeFileSystem(options.root);
+		this.installPolicy = options.installPolicy ?? installPolicyFromEnv((options.env ?? process.env).ROBOAGENT_INSTALL_POLICY);
 		if (options.toolStore) {
 			assertStoreOutsideWorkspace(options.toolStore.location, options.root);
 			this.toolStore = options.toolStore;
@@ -116,7 +125,7 @@ export class NodeAgentHost implements IAgentHost {
 	}
 
 	approve(request: ApprovalRequest): Promise<boolean> {
-		if ((this.options.installPolicy ?? 'auto') === 'auto' && request.category === 'install' && (this.options.autoInstallTools ?? DEFAULT_AUTO_INSTALL_TOOLS).includes(request.toolName)) {
+		if (this.installPolicy === 'auto' && request.category === 'install' && (this.options.autoInstallTools ?? DEFAULT_AUTO_INSTALL_TOOLS).includes(request.toolName)) {
 			this.log('info', `Auto-approved (install policy "auto"): ${request.summary}`);
 			return Promise.resolve(true);
 		}

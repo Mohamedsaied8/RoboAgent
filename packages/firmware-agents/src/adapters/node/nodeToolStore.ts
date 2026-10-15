@@ -21,6 +21,21 @@ export interface NodeToolStoreOptions {
 	readonly allowedHosts?: readonly string[];
 	/** Platform override (tests); default: this machine. */
 	readonly platform?: PlatformId | null;
+	/**
+	 * An earlier store location to take over on first use (moved, and its index converted), so
+	 * tools installed there are not downloaded again. Ignored when this store already exists.
+	 */
+	readonly migrateFrom?: string;
+}
+
+/** Where development builds kept the store before it followed the platform data folder. */
+export function legacyToolStoreRoot(home: string = os.homedir()): string {
+	return path.join(home, '.roboagent', 'tools');
+}
+
+/** The default store: {@link defaultToolStoreRoot}, taking over the legacy location if one exists. */
+export function createDefaultToolStore(env: Readonly<Record<string, string | undefined>> = process.env): NodeToolStore {
+	return new NodeToolStore({ root: defaultToolStoreRoot(env), ...env.ROBOAGENT_TOOLS_DIR ? {} : { migrateFrom: legacyToolStoreRoot() } });
 }
 
 /**
@@ -47,8 +62,8 @@ export function currentPlatform(platform: NodeJS.Platform = process.platform, ar
 }
 
 /**
- * What the index records. Paths are **never** stored (entries written by an earlier development
- * build, which stored absolute paths, are ignored and those tools are simply downloaded again): they are always derived from
+ * What the index records. Paths are **never** stored (a store from an earlier development build,
+ * whose index had absolute paths, is converted by `migrateFrom`; elsewhere such entries are ignored): they are always derived from
  * `<root>/<id>/<version>`, so a tampered index cannot point the store (or `remove`) elsewhere.
  */
 interface IndexEntry {
@@ -88,6 +103,7 @@ export class NodeToolStore implements IToolStore {
 	private readonly inFlight = new Map<string, Promise<InstalledTool>>();
 	/** Serialises index updates inside this process; the lock folder covers other processes. */
 	private indexQueue: Promise<unknown> = Promise.resolve();
+	private migrated?: Promise<void>;
 
 	constructor(private readonly options: NodeToolStoreOptions) {
 		this.location = path.resolve(options.root);
@@ -101,9 +117,14 @@ export class NodeToolStore implements IToolStore {
 
 	async installed(): Promise<InstalledTool[]> {
 		const present: InstalledTool[] = [];
+		const realRoot = await fs.realpath(this.location).catch(() => this.location);
 		for (const e of await this.readIndex()) {
 			const tool = this.toInstalled(e);
-			if (tool && await fs.stat(tool.binDir).then(s => s.isDirectory(), () => false)) {
+			// The install folder must really be inside the store, and its bin folder inside the
+			// install (no link leading elsewhere, e.g. into a workspace).
+			const realDir = tool && await fs.realpath(tool.dir).catch(() => undefined);
+			const realBin = tool && await fs.realpath(tool.binDir).catch(() => undefined);
+			if (tool && realDir && realBin && isInside(realRoot, realDir) && isInside(realDir, realBin) && await fs.stat(realBin).then(s => s.isDirectory(), () => false)) {
 				present.push(tool);
 			}
 		}
@@ -302,7 +323,74 @@ export class NodeToolStore implements IToolStore {
 		}
 	}
 
+	/**
+	 * Moves the legacy store here (same file system: a rename) and rewrites its index, whose
+	 * entries stored absolute paths, into the current form. Anything unexpected leaves both alone.
+	 */
+	private migrate(): Promise<void> {
+		this.migrated ??= (async () => {
+			const from = this.options.migrateFrom && path.resolve(this.options.migrateFrom);
+			if (!from || from === this.location) {
+				return;
+			}
+			const lock = `${this.location}.migrate.lock`;
+			// Nothing to take over and no migration in flight: no lock, no folders.
+			const exists = (p: string) => fs.lstat(p).then(() => true, () => false);
+			if (!await exists(from) && !await exists(lock)) {
+				return;
+			}
+			// One process migrates; the others wait on the lock *before* looking at anything, and
+			// then see the finished store.
+			await fs.mkdir(path.dirname(this.location), { recursive: true });
+			await acquireLock(lock);
+			try {
+				// A symlinked legacy store (or one reached through a symlinked folder) could carry
+				// the store anywhere, e.g. into a workspace: only a plain folder is taken over.
+				const real = await fs.realpath(from).catch(() => undefined);
+				const lst = await fs.lstat(from).catch(() => undefined);
+				if (real && real === from && lst?.isDirectory()) {
+					await this.migrateLocked(from);
+				}
+			} finally {
+				await fs.rmdir(lock).catch(() => { });
+			}
+		})().catch(() => { });
+		return this.migrated;
+	}
+
+	private async migrateLocked(from: string): Promise<void> {
+		{
+			if (await fs.stat(this.location).then(() => true, () => false)) {
+				return;
+			}
+			let legacy: unknown;
+			try {
+				legacy = JSON.parse(await fs.readFile(path.join(from, 'index.json'), 'utf8'));
+			} catch {
+				return;
+			}
+			if (!await fs.rename(from, this.location).then(() => true, () => false)) {
+				return; // e.g. another file system: keep using the new, empty store
+			}
+			const converted: IndexEntry[] = [];
+			for (const e of Array.isArray(legacy) ? legacy : []) {
+				if (!e || typeof e.id !== 'string' || typeof e.version !== 'string' || typeof e.binDir !== 'string') {
+					continue;
+				}
+				const oldDir = path.join(from, e.id, e.version);
+				const rel = (path.isAbsolute(e.binDir) ? path.relative(oldDir, e.binDir) : e.binDir) || '.';
+				if (this.installDir(e.id, e.version) && !rel.split(/[\\/]/).includes('..') && !path.isAbsolute(rel)) {
+					converted.push({ id: e.id, version: e.version, binDir: rel, sha256: String(e.sha256), onPath: e.onPath === true, installedAt: String(e.installedAt ?? ''), url: String(e.url ?? '') });
+				}
+			}
+			const tmp = path.join(this.location, `.index.${randomUUID()}.json`);
+			await fs.writeFile(tmp, JSON.stringify(converted, null, '\t'));
+			await fs.rename(tmp, path.join(this.location, 'index.json'));
+		}
+	}
+
 	private async readIndex(): Promise<IndexEntry[]> {
+		await this.migrate();
 		try {
 			const parsed = JSON.parse(await fs.readFile(path.join(this.location, 'index.json'), 'utf8'));
 			return Array.isArray(parsed) ? parsed.filter(e => e && typeof e === 'object') : [];

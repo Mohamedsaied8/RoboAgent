@@ -75,7 +75,11 @@ own `60-roboagent-openocd.rules`; absolute program paths; `pkexec` only when the
 otherwise one exact command for the user. Verified with real vendor downloads on this machine. Not
 verifiable here: the root step for real (sudo needs a password) and anything needing a probe/board.
 Deferred: HTTPS_PROXY support, manifest refresh script, ESP-IDF tools under `~/.espressif` not on PATH
-(P2b), Windows driver checks. Host still lacks `openocd`, `gdb-multiarch`, `ninja`, ESP-IDF toolchain.
+(P2b), Windows driver checks.
+Follow-ups (2026-10-15): installs are automatic by default (opt out with `ROBOAGENT_INSTALL_POLICY=ask`);
+no hard-coded system paths (programs, udev folders and the admin folder are found by search; root
+programs must be root-owned along the whole link chain, with no ACLs); the tool store follows the
+platform data folder; `createDefaultToolStore()` (for the P4 hosts) takes over the earlier `~/.roboagent/tools`. Host still lacks `openocd`, `gdb-multiarch`, `ninja`, ESP-IDF toolchain.
 
 ---
 

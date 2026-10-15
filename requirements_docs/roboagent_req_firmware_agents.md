@@ -195,7 +195,7 @@ registers, memory, SFR fields, backtrace, crash decode, RTOS snapshot), `ChangeR
 | **R7.7** | All hardware-writing / file-writing / installing tools are approval-gated in every host, except pinned, hash-verified user-space installs under the default `auto` install policy (R7.10); root-level steps always ask. |
 | **R7.8** | The same seeded-bug scenario runs from RoboAgent chat, from `fwagent`, and from an MCP client. |
 | **R7.9** | Missing probe / toolchain / gateway capability degrades gracefully with an actionable message (no crash, no hang). |
-| **R7.10** | The debugging module installs its own dependencies (OpenOCD / openocd-esp32, the target's GDB, SVD files, probe udev rules) without manual setup: user-space installs from pinned, hash-verified vendor archives into a managed tool store, the system package manager as fallback, and root used only for udev rules (`sudo -n` / `pkexec`, else one exact command). Installs follow the host's install policy: `auto` by default (pinned user-space installs without prompts), `ask` as an opt-out; root steps always ask. |
+| **R7.10** | The debugging module installs its own dependencies (OpenOCD / openocd-esp32, the target's GDB, SVD files, probe udev rules) without manual setup: user-space installs from pinned, hash-verified vendor archives into a managed tool store, the system package manager as fallback, and root used only for udev rules (`sudo -n` / `pkexec`, else one exact command). Installs follow the host's install policy: `auto` by default (pinned user-space installs without prompts), `ask` as an opt-out (`ROBOAGENT_INSTALL_POLICY=ask`); root steps always ask. System locations (programs, udev folders) are discovered at runtime, not hard-coded. |
 
 ---
 
