@@ -8,6 +8,34 @@ plain `git commit` works from here on; `--no-verify` is no longer needed.
 
 ---
 
+## REQ-7 — Firmware Agents: Dev · Debug · Test (2026-10-15)
+
+Spec: `requirements_docs/roboagent_req_firmware_agents.md`. Detail: `implementation.md` → REQ-7.
+
+| # | Task | Status |
+|---|------|--------|
+| 7.0a | LLM path: **OpenRouter** via `OpenAiCompatibleClient`; key from `OPENROUTER_API_KEY` / secret storage, model from config (decided 2026-10-15) | ☑ |
+| 7.0b | Test framework: **GoogleTest + GMock** primary, Unity fallback for small MCUs / ESP-IDF (decided 2026-10-15). ⚠ Validation boards still open (STM32 + ST-Link V2; ESP32-S3/C3 USB-JTAG or ESP-PROG) | ◐ |
+| 7.0c | Host prerequisites: superseded by 7.5a — the agents install OpenOCD, GDB, ESP32 tools and SVDs themselves (only udev rules may need root once) | ☑ |
+| 7.0d | Install policy default: `auto` (decided 2026-10-15) — pinned user-space installs run without prompts; `ask` is an opt-out; root steps always ask | ☑ |
+| 7.1 | P0 — `packages/firmware-agents` scaffold, tsconfig, mocha, boundary test banning `vscode`/`vs/*` imports, RoboAgent header lint glob (gulp wiring deferred to P4, when an extension consumes the package) | ☑ |
+| 7.2 | P0 — Agent kernel: `ILlmClient`, `ITool`, `IToolRegistry` (filtered views), `IAgentHost`, `Agent` ReAct base, `IMessageBus`, `ApprovalRequiredTool`, `ScriptedFakeLlm`, OpenRouter client, Node adapters; independent code + security review, all confirmed findings fixed with regression tests (64 tests) | ☑ |
+| 7.3 | P1 — Embedded ports + `DefaultPlatformFactory` (Abstract Factory) + `ITargetCatalog`; toolchains (arm-none-eabi, ESP-IDF, PlatformIO) with probing and an install plan; build systems (CMake, Make, PlatformIO, ESP-IDF); flashers (OpenOCD, st-flash, idf.py, pio) | ☑ |
+| 7.4 | P1 — FirmwareDevAgent + file tools (secret/symlink-safe): detect, check/install toolchain, configure/build/clean, GCC/ld/CMake diagnostics, size + map reports, flash, FreeRTOS config lint, ChangeRequest handling. Gate passed with the real toolchain: `fixtures/stm32_ws/stm32_test` builds from a clean checkout, size matches `arm-none-eabi-size` (R7.2). Flashing verified only against scripted probe output (no board / OpenOCD on this machine) | ☑ |
+| 7.5a | P2a — Self-install framework (R7.10): dependency checks + installers, pinned `TOOL_MANIFEST` (vendor SHA-256s), `NodeToolStore`, `DependencyResolver`, install policy (`ask` default / `auto`), udev rules + serial group as separate root step; STM32 **and** ESP32 deps (xPack OpenOCD, xPack Arm GCC → arm-none-eabi-gdb, Espressif OpenOCD, Xtensa/RISC-V GDB); tools `check_debug_tools`, `ensure_debug_tools`, `install_probe_access`; Dev agent `install_toolchain`. Verified with real downloads (incl. the 300 MB Arm toolchain). Not done: SVD fetching (moves to the SVD provider task), manifest refresh script, HTTPS_PROXY | ☑ |
+| 7.5 | P2a — GDB/MI client, OpenOCD debug server, ST-Link probe, Cortex-M architecture, SVD provider/decoder, CFSR/HFSR fault decoder, `ITargetSession` facade; transcript tests + real board (R7.3) | ☐ |
+| 7.6 | P2a — FirmwareDebugAgent tools: session, BP/WP budget, memory, registers, evaluate/watch, backtrace, read/compare peripheral, decode_crash | ☐ |
+| 7.7 | P2b — ESP32: openocd-esp32, USB-JTAG/ESP-PROG probes, Xtensa + RISC-V architectures, multi-core, panic-log / core-dump / watchdog crash sources, `ISerialPort` (R7.4) | ☐ |
+| 7.8 | P2c — `IRtosAwareness` FreeRTOS: tasks/stacks/queues/heap/runtime stats; deadlock, stack-overflow risk, priority inversion, ISR-priority misuse, heap exhaustion analyses; seeded-bug tests on both targets (R7.5) | ☐ |
+| 7.9 | P3 — FirmwareTestAgent + `ITestRunner` (GoogleTest/GMock host + C-mock seam generator, GoogleTest on large MCUs, Unity on small MCUs / ESP-IDF with pytest-embedded / QEMU, HIL assertions) | ☐ |
+| 7.10 | P3 — Orchestrator (Mediator), `BugFixWorkflow` state machine, probe lock, audit trail; seeded-bug loop to green (R7.6) | ☐ |
+| 7.11 | P4 — `extensions/roboagent-firmware-agents`: `vscode.lm.registerTool`, `@fw-dev` / `@fw-debug` / `@fw-test` participants, confirmations, `ModeHost` + target-catalog adapters (R7.7) | ☐ |
+| 7.12 | P4 — `fwagent` CLI + MCP server adapter; same scenario from all three hosts (R7.8) | ☐ |
+| 7.6b | P2d — Rust/probe-rs sidecar spike (1 week, go/no-go; GDB server for expressions — no custom evaluator) | ☐ |
+| 7.13 | Docs (`docs/firmware-agents.md`) + trackers | ☐ |
+
+---
+
 ## REQ-6 — Mode selector + Create / Build / Debug toolbar, bundled toolchain extensions (2026-09-04)
 
 Branch `modes-toolbar` (off `main`). Spec = the user brief (STM32 / ESP32 / ROS2 modes, title-bar
