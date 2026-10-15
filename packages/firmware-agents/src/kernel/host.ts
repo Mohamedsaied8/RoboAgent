@@ -22,6 +22,12 @@ export interface IFileSystem {
 	writeFile(path: string, content: string): Promise<void>;
 	exists(path: string): Promise<boolean>;
 	readDir(path: string): Promise<DirEntry[]>;
+	/**
+	 * The workspace-relative path `path` really refers to after following symlinks (for a path
+	 * that does not exist yet: its deepest existing ancestor resolved, plus the rest). Policies
+	 * such as the secret-file block must check this as well as the requested path.
+	 */
+	realPath(path: string): Promise<string>;
 }
 
 export interface DirEntry {

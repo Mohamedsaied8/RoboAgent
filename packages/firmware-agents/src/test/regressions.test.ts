@@ -13,7 +13,15 @@ import * as os from 'os';
 import * as path from 'path';
 import { NodeAgentHost } from '../adapters/node/nodeAgentHost';
 import { NodeFileSystem, PathOutsideWorkspaceError } from '../adapters/node/nodeFileSystem';
-import { killAllChildren, runProcess } from '../adapters/node/nodeProcessRunner';
+import { killAllChildren, runProcess, sanitizePath } from '../adapters/node/nodeProcessRunner';
+import { createFirmwareDevAgent } from '../agents/dev/devAgent';
+import { ChangeTracker, createFileTools } from '../agents/tools/fileTools';
+import { CMakeBuildSystem, MakeBuildSystem } from '../embedded/build/buildSystems';
+import { parseBuildOutput } from '../embedded/build/gccDiagnostics';
+import { parseBerkeleySize } from '../embedded/build/sizeReport';
+import { OpenOcdFlasher, StFlashFlasher } from '../embedded/flash/flashers';
+import { detectProject, ProjectInfo } from '../embedded/project';
+import { DefaultTargetCatalog } from '../embedded/target';
 import { Agent, AgentProfile } from '../kernel/agent';
 import { ApprovalRequest, IAgentHost } from '../kernel/host';
 import { validateJsonSchema } from '../kernel/jsonSchema';
@@ -343,5 +351,189 @@ suite('Regressions: second review round', () => {
 		assert.strictEqual(envLine, '[null,null,null]');
 		assert.ok(!rest.includes('sk-or') && !rest.includes('abcdef'), rest);
 		assert.ok(!chunks.join('').includes(key));
+	});
+});
+
+suite('Regressions: P1 reviews', () => {
+
+	const catalog = new DefaultTargetCatalog();
+	const fwProject: ProjectInfo = { dir: 'fw', buildSystem: 'cmake', target: catalog.resolve('STM32F103C8T6')!, rtos: 'none', evidence: [] };
+
+	test('secret policy follows symlinks: reads, searches, listings and writes through links are refused', async () => {
+		const host = new FakeHost();
+		host.fs.files.set('.env', 'API_KEY=supersecret123');
+		host.fs.files.set('.git/config', 'token = ghp_abc');
+		host.fs.files.set('notes.txt', 'API_KEY=supersecret123');
+		host.fs.files.set('cfg.c', 'token = ghp_abc');
+		host.fs.links.set('notes.txt', '.env');
+		host.fs.links.set('cfg.c', '.git/config');
+		host.fs.links.set('hooks', '.git/hooks');
+		const tools = Object.fromEntries(createFileTools(new ChangeTracker()).map(t => [t.name, t]));
+		const ctx = { host, signal: new AbortController().signal, agentId: 't', callId: 'c' };
+		await assert.rejects(tools.read_file.invoke({ path: 'notes.txt' }, ctx), /credential, key or VCS-internal/);
+		assert.deepStrictEqual((await tools.search_text.invoke({ text: 'ghp_' }, ctx) as { matches: string[] }).matches, []);
+		assert.deepStrictEqual(await tools.list_directory.invoke({}, ctx), []);
+		await assert.rejects(tools.write_file.invoke({ path: 'hooks/pre-commit', content: 'x' }, ctx), /VCS-internal/);
+		await assert.rejects(tools.write_file.invoke({ path: '.vscode/tasks.json', content: '{}' }, ctx), /run automatically/);
+		await assert.rejects(tools.write_file.invoke({ path: '.envrc', content: 'x' }, ctx), /run automatically/);
+		await assert.rejects(tools.write_file.invoke({ path: '.devcontainer/devcontainer.json', content: '{}' }, ctx), /run automatically/);
+		assert.strictEqual(host.fs.files.has('.git/hooks/pre-commit'), false);
+	});
+
+	test('NodeFileSystem.realPath reports where a symlink really points', async () => {
+		const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fwagents-rp-'));
+		try {
+			await fs.writeFile(path.join(root, '.env'), 'x');
+			await fs.symlink('.env', path.join(root, 'notes.txt'));
+			await fs.mkdir(path.join(root, '.git'));
+			await fs.symlink('.git', path.join(root, 'hooks'));
+			const nfs = new NodeFileSystem(root);
+			assert.deepStrictEqual([await nfs.realPath('notes.txt'), await nfs.realPath('hooks/new-file'), await nfs.realPath('.')], ['.env', '.git/new-file', '.']);
+		} finally {
+			await fs.rm(root, { recursive: true, force: true });
+		}
+	});
+
+	test('the diagnostics and size parsers stay linear on adversarial lines', () => {
+		const started = Date.now();
+		parseBuildOutput('f:1: error: x' + '\t \t'.repeat(40000) + '[');
+		parseBerkeleySize(' '.repeat(160_000) + 'x');
+		parseBuildOutput(('a/'.repeat(2000) + 'gcc: error: ') .repeat(5));
+		assert.ok(Date.now() - started < 1000, `took ${Date.now() - started} ms`);
+	});
+
+	test('empty and relative PATH entries are dropped before spawning', () => {
+		assert.strictEqual(sanitizePath('::/usr/bin:.:bin:/opt/arm/bin:', ':'), '/usr/bin:/opt/arm/bin');
+		assert.strictEqual(sanitizePath('/ws/.venv/bin:/usr/bin:/ws2/bin', ':', '/ws'), '/usr/bin:/ws2/bin');
+	});
+
+	test('a planted file named like an option cannot reach objcopy or st-flash as an option', async () => {
+		const host = new FakeHost();
+		await new StFlashFlasher().flash(host, fwProject, 'fw/--strip-all.elf', {});
+		assert.deepStrictEqual(host.commands.map(c => c.args), [['-O', 'binary', './--strip-all.elf', './--strip-all.bin'], ['--reset', 'write', './--strip-all.bin', '0x08000000']]);
+	});
+
+	test('OpenOCD refuses to run when the project ships its own interface/target script', async () => {
+		const host = new FakeHost();
+		host.fs.files.set('fw/interface/stlink.cfg', 'exec rm -rf ~');
+		const result = await new OpenOcdFlasher('target/stm32f1x.cfg', '0x08000000').flash(host, fwProject, 'fw/build/app.elf', {});
+		assert.deepStrictEqual([result.ok, host.commands.length], [false, 0]);
+		assert.match(result.problem ?? '', /would load instead/);
+	});
+
+	test('Make projects find their artifacts in build/', async () => {
+		const host = new FakeHost();
+		host.fs.files.set('fw/Makefile', '');
+		host.fs.files.set('fw/build/app.elf', '');
+		host.fs.files.set('fw/build/app.map', '');
+		host.fs.files.set('fw/Drivers/lib.a', '');
+		const artifacts = await new MakeBuildSystem().findArtifacts(host, { ...fwProject, buildSystem: 'make' });
+		assert.deepStrictEqual([artifacts.elf, artifacts.map, artifacts.lib], [['fw/build/app.elf'], ['fw/build/app.map'], []]);
+	});
+
+	test('a CMake cache from another folder is replaced instead of silently building the original', async () => {
+		const host = new FakeHost();
+		host.fs.files.set('fw/build/CMakeCache.txt', '');
+		host.fs.files.set('fw/build/Makefile', '');
+		let configures = 0;
+		host.onExec = (_command, args) => {
+			if (args[0] === '-S' && ++configures === 1) {
+				return { exitCode: 1, stderr: 'CMake Error: The current CMakeCache.txt directory /ws/fw/build/CMakeCache.txt is different than the directory /old/fw/build where CMakeCache.txt was created. This may result in binaries being created in the wrong place.\n' };
+			}
+			return undefined;
+		};
+		const steps = await new CMakeBuildSystem().build(host, fwProject);
+		// The resolved stale-cache error is not reported as a failure: every step is ok, with a note.
+		assert.deepStrictEqual(steps.map(s => [s.step, s.ok]), [['clean', true], ['configure', true], ['build', true]]);
+		assert.deepStrictEqual(host.commands.map(c => c.args.join(' ')), ['-S . -B build', '-E remove_directory build', '-S . -B build', '--build build --parallel']);
+		assert.match(steps[0].note ?? '', /another source folder/);
+	});
+
+	test('.ioc files with both Mcu.Name and Mcu.UserName give the real part; esp32dev boards are ESP32', async () => {
+		const host = new FakeHost();
+		host.fs.files.set('a/CMakeLists.txt', '');
+		host.fs.files.set('a/a.ioc', 'Mcu.Family=STM32F1\nMcu.Name=STM32F103C(8-B)Tx\nMcu.UserName=STM32F103C8Tx\n');
+		assert.deepStrictEqual([(await detectProject(host.fs, 'a', catalog))?.target?.part, (await detectProject(host.fs, 'a', catalog))?.target?.exact], ['STM32F103C8T6', true]);
+		host.fs.files.set('b/platformio.ini', '[env:esp32dev]\nplatform = espressif32\nboard = esp32dev\n');
+		assert.strictEqual((await detectProject(host.fs, 'b', catalog))?.target?.part, 'esp32');
+		host.fs.files.set('c/platformio.ini', '[env:s3]\nboard = esp32s3box\n');
+		assert.strictEqual((await detectProject(host.fs, 'c', catalog))?.target?.part, 'esp32s3');
+	});
+
+	test('more diagnostic forms: plain CMake errors, Windows paths, ld-prefixed multiple definitions, driver errors', () => {
+		const out = [
+			'CMake Error: CMAKE_C_COMPILER not set, after EnableLanguage',
+			'CMake Error in CMakeLists.txt:',
+			'  No SOURCES given to target: app',
+			'C:\\work\\fw\\Src\\main.c:12:5: error: expected \';\' before \'}\' token',
+			'c:/work/fw/Inc/app.h:3:1: warning: no newline at end of file',
+			'c:\\gcc\\bin\\ld.exe: cannot find -lfoo',
+			'/usr/bin/arm-none-eabi-ld: dup.o:/work/dup.c:1: multiple definition of `crc16\'; main.o:/work/main.c:3: first defined here',
+			'arm-none-eabi-gcc: error: unrecognized command-line option \'-mfoo\'',
+			'collect2: error: ld returned 1 exit status',
+		].join('\n');
+		assert.deepStrictEqual(parseBuildOutput(out).map(d => [d.source, d.file, d.line, d.message]), [
+			['cmake', undefined, undefined, 'CMAKE_C_COMPILER not set, after EnableLanguage'],
+			['cmake', 'CMakeLists.txt', undefined, 'No SOURCES given to target: app'],
+			['compiler', 'C:\\work\\fw\\Src\\main.c', 12, 'expected \';\' before \'}\' token'],
+			['compiler', 'c:/work/fw/Inc/app.h', 3, 'no newline at end of file'],
+			['linker', undefined, undefined, 'cannot find -lfoo'],
+			['linker', '/work/dup.c', 1, 'multiple definition of `crc16\''],
+			['compiler', undefined, undefined, 'unrecognized command-line option \'-mfoo\''],
+		]);
+	});
+
+	test('OpenOCD gives a .bin its flash address; the access problem is diagnosed as access', async () => {
+		const host = new FakeHost();
+		host.onExec = () => ({ exitCode: 1, stderr: 'Error: libusb_open() failed with LIBUSB_ERROR_ACCESS\nError: open failed\n' });
+		const flasher = new OpenOcdFlasher('target/stm32f1x.cfg', '0x08000000');
+		const result = await flasher.flash(host, fwProject, 'fw/build/app.bin', {});
+		assert.strictEqual(host.commands[0].args.at(-1), 'program {build/app.bin} 0x08000000 verify reset exit');
+		assert.match(result.problem ?? '', /not accessible/);
+		assert.strictEqual(new OpenOcdFlasher('board/x.cfg').pickImage({ elf: [], map: [], bin: [], hex: [], lib: [] }, { artifact: 'fw/app.bin' }).ok, false);
+	});
+
+	test('CRLF files can be edited with LF text', async () => {
+		const host = new FakeHost();
+		host.fs.files.set('m.c', 'int a;\r\nint b;\r\nint c;\r\n');
+		const tools = Object.fromEntries(createFileTools(new ChangeTracker()).map(t => [t.name, t]));
+		const ctx = { host, signal: new AbortController().signal, agentId: 't', callId: 'c' };
+		await tools.edit_file.invoke({ path: 'm.c', oldText: 'int a;\nint b;', newText: 'int a;\nint b2;' }, ctx);
+		assert.strictEqual(host.fs.files.get('m.c'), 'int a;\r\nint b2;\r\nint c;\r\n');
+		const read = await tools.read_file.invoke({ path: 'm.c' }, ctx) as { content: string };
+		assert.ok(!read.content.includes('\r'));
+	});
+
+	test('flash warns after a failed build and after edits with no build; change requests ignore earlier builds', async () => {
+		const host = new FakeHost();
+		host.fs.files.set('fw/CMakeLists.txt', '');
+		host.fs.files.set('fw/README.md', 'STM32F103C8T6');
+		host.fs.files.set('fw/main.c', 'x');
+		host.fs.files.set('fw/build/app.elf', '');
+		let failBuild = true;
+		host.onExec = (command, args) => command === 'cmake' && args[0] === '--build' && failBuild ? { exitCode: 2, stderr: 'main.c:1:1: error: e\n' } : command === 'openocd' ? { stderr: '** Verified OK **' } : undefined;
+		const llm = new ScriptedFakeLlm([
+			callTool('e', 'edit_file', { path: 'fw/main.c', oldText: 'x', newText: 'y' }),
+			callTool('f1', 'flash', { dir: 'fw' }),
+			callTool('b', 'build', { dir: 'fw' }),
+			callTool('f2', 'flash', { dir: 'fw' }),
+			say('done'),
+		]);
+		const agent = createFirmwareDevAgent({ llm, host });
+		await agent.run('x');
+		const result = (id: string) => {
+			const m = llm.requests.at(-1)!.messages.find(x => x.role === 'tool' && x.toolCallId === id);
+			return m && m.role === 'tool' ? JSON.parse(m.content) : undefined;
+		};
+		assert.match(result('f1').warning, /not built since/);
+		assert.match(result('f2').warning, /last build failed/);
+
+		failBuild = false;
+		const second = new ScriptedFakeLlm([say('Nothing to change.')]);
+		const agent2 = createFirmwareDevAgent({ llm: new ScriptedFakeLlm([callTool('b', 'build', { dir: 'fw' }), say('built')]), host });
+		await agent2.run('build');
+		Object.assign(agent2, { llm: second });
+		const { applied } = await agent2.handleChangeRequest({ type: 'change-request', bugId: 'b', description: 'noop' });
+		assert.deepStrictEqual([applied.changedFiles, applied.buildSucceeded], [[], false]);
 	});
 });

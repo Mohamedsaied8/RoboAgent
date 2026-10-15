@@ -5,7 +5,7 @@ Per-requirement context, scope, files, and verification. Task status lives in
 
 ---
 
-## REQ-7 — Firmware Agents: Dev · Debug · Test (2026-10-15, in progress — P0 done)
+## REQ-7 — Firmware Agents: Dev · Debug · Test (2026-10-15, in progress — P0 + P1 done)
 
 **Context.** Three cooperating AI agents for STM32 / ESP32 firmware (with or without FreeRTOS):
 a **Dev** agent (toolchain setup, build, flash, apply change requests), a **Debug** agent
@@ -44,7 +44,24 @@ prototype-key rejection), `OpenAiCompatibleClient`/OpenRouter (streamed tool cal
 timeout, https-only, stream limits), Node adapters (workspace-confined FS with symlink checks,
 shell-free process runner with process-group kill, secret-stripped child env, redaction). Reviewed
 by independent code + security reviews; every confirmed finding fixed with a regression test.
-Verify: `cd packages/firmware-agents && npm test`. Host still lacks `openocd`, `gdb-multiarch`, `ninja`, ESP-IDF toolchain.
+Verify: `cd packages/firmware-agents && npm test`.
+
+**P1 delivered (2026-10-15) — Dev agent.** `src/embedded/` (target catalog mirroring the REQ-6 MCU
+catalog behind `ITargetCatalog`; project detection from `.roboagent/project.json`, `.ioc`,
+`platformio.ini`, `sdkconfig`, README/CMake/Make mentions; toolchain probing + package-manager
+install plan; CMake/Make/PlatformIO/ESP-IDF strategies — CMake re-configures every build so a
+failed configure, a build-type change or a cache copied from another folder can't silently build
+the wrong thing; GCC/ld/CMake/make diagnostics parser incl. Windows paths; Berkeley size and GNU ld
+map parsers that agree with `arm-none-eabi-size`; OpenOCD/st-flash/idf.py/pio flashers with probe
+problem diagnosis; FreeRTOSConfig.h lint) and `src/agents/` (file tools that refuse credential,
+key and VCS files also through symlinks and refuse writes to auto-run files; `FirmwareDevAgent`
+with system prompt, 10 dev tools and `handleChangeRequest`). Gate run against the real
+arm-none-eabi-gcc 10.3 + CMake 3.25. Not yet verified on hardware (no board/OpenOCD here).
+Deferred, with the phase that closes each: OpenOCD helper scripts pulled in by `source [find …]`
+could resolve in the project folder (P2a: absolute script paths); `objcopy -O binary` on RAM-placed
+load sections can yield a huge `.bin` (P2a); CMake executables without `.elf` are not found
+(on demand); `CMakePresets.json` builds get a separate tree (P4); Fedora's multi-arch `gdb` is not
+accepted as the ARM debugger (P2a). P0 deferrals: see `requirements_docs/roboagent_req_firmware_agents.md` §9a. Host still lacks `openocd`, `gdb-multiarch`, `ninja`, ESP-IDF toolchain.
 
 ---
 

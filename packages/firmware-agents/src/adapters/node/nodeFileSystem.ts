@@ -31,6 +31,11 @@ export function isInside(root: string, candidate: string): boolean {
  * threat this guards against.
  */
 export async function resolveInside(root: string, requested: string): Promise<string> {
+	return (await resolveWithReal(root, requested)).absolute;
+}
+
+/** {@link resolveInside}, also returning the fully resolved real path. */
+async function resolveWithReal(root: string, requested: string): Promise<{ absolute: string; real: string; realRoot: string }> {
 	const absolute = path.resolve(root, requested);
 	if (!isInside(root, absolute)) {
 		throw new PathOutsideWorkspaceError(requested);
@@ -61,10 +66,11 @@ export async function resolveInside(root: string, requested: string): Promise<st
 		if (!stat.isSymbolicLink() && !stat.isDirectory() && rest.length) {
 			throw new Error(`"${requested}": "${path.relative(root, existing)}" is not a directory`);
 		}
-		if (!isInside(realRoot, path.join(real, ...rest))) {
+		const fullReal = path.join(real, ...rest);
+		if (!isInside(realRoot, fullReal)) {
 			throw new PathOutsideWorkspaceError(requested);
 		}
-		return absolute;
+		return { absolute, real: fullReal, realRoot };
 	}
 }
 
@@ -107,6 +113,11 @@ export class NodeFileSystem implements IFileSystem {
 		} catch {
 			return false;
 		}
+	}
+
+	async realPath(p: string): Promise<string> {
+		const { real, realRoot } = await resolveWithReal(this.root, p);
+		return path.relative(realRoot, real).split(path.sep).join('/') || '.';
 	}
 
 	async readDir(p: string): Promise<DirEntry[]> {

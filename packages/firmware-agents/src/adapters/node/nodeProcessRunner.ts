@@ -5,7 +5,8 @@
 
 import { ChildProcess, spawn } from 'child_process';
 import { ExecOptions, ExecResult } from '../../kernel/host';
-import { PathOutsideWorkspaceError, resolveInside } from './nodeFileSystem';
+import * as path from 'path';
+import { isInside, PathOutsideWorkspaceError, resolveInside } from './nodeFileSystem';
 
 const DEFAULT_MAX_OUTPUT = 1024 * 1024;
 /** Every run ends eventually; long-lived servers (OpenOCD, GDB) will get their own handle API. */
@@ -22,6 +23,20 @@ export interface RunProcessOptions extends ExecOptions {
 	readonly baseEnv?: Readonly<Record<string, string | undefined>>;
 	/** Applied to every `onOutput` chunk and to the captured output before it is capped. */
 	readonly redact?: (text: string) => string;
+}
+
+/**
+ * Drops empty and relative `PATH` entries (`::`, a trailing `:`, `.`): with the workspace as
+ * working directory they would let a planted `./arm-none-eabi-size` run instead of the real tool.
+ */
+export function sanitizePath(value: string | undefined, delimiter = process.platform === 'win32' ? ';' : ':', workspaceRoot?: string): string | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	const isAbsolute = (p: string) => process.platform === 'win32' ? /^[a-zA-Z]:[\\/]|^\\\\/.test(p) : p.startsWith('/');
+	// Also drop folders inside the workspace (e.g. an activated <ws>/.venv/bin): the model can write there.
+	const inWorkspace = (p: string) => workspaceRoot !== undefined && isInside(path.resolve(workspaceRoot), path.resolve(p));
+	return value.split(delimiter).filter(p => p && isAbsolute(p) && !inWorkspace(p)).join(delimiter);
 }
 
 const failed = (spawnError: string): ExecResult => ({ exitCode: null, stdout: '', stderr: '', timedOut: false, cancelled: false, truncated: false, spawnError });
@@ -101,11 +116,17 @@ export async function runProcess(root: string, command: string, args: readonly s
 		let killTimer: ReturnType<typeof setTimeout> | undefined;
 		let drainTimer: ReturnType<typeof setTimeout> | undefined;
 
+		const env: Record<string, string | undefined> = { ...(options.baseEnv ?? process.env), ...options.env };
+		for (const key of Object.keys(env)) {
+			if (key.toUpperCase() === 'PATH') {
+				env[key] = sanitizePath(env[key], undefined, root);
+			}
+		}
 		let child: ChildProcess;
 		try {
 			child = spawn(command, [...args], {
 				cwd,
-				env: { ...(options.baseEnv ?? process.env), ...options.env },
+				env,
 				shell: false,
 				detached: process.platform !== 'win32', // own process group, see killTree
 				windowsHide: true,
