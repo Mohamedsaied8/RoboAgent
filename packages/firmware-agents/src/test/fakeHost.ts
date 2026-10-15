@@ -3,7 +3,22 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ApprovalRequest, DirEntry, ExecOptions, ExecResult, IAgentHost, IFileSystem, LogLevel } from '../kernel/host';
+import { ApprovalRequest, DirEntry, ExecOptions, ExecResult, IAgentHost, IFileSystem, ISystemProbe, LogLevel, ProgramSearchOptions, UdevRuleFile } from '../kernel/host';
+
+/** System probe for tests: programs and udev folders as configured, nothing real. */
+export class FakeSystemProbe implements ISystemProbe {
+	/** name → absolute path; `root: true` marks it trusted for root. */
+	readonly programs = new Map<string, { path: string; root?: boolean }>();
+	ruleDirs: string[] = [];
+	ruleFiles: UdevRuleFile[] = [];
+	async findProgram(name: string, options: ProgramSearchOptions = {}) {
+		const p = this.programs.get(name);
+		return p && (!options.trustedForRoot || p.root) ? p.path : undefined;
+	}
+	async udevRuleDirs() { return this.ruleDirs; }
+	async udevAdminDir() { return this.ruleDirs[0]; }
+	async readUdevRules() { return this.ruleFiles; }
+}
 
 const normalize = (p: string) => p.replace(/^\.(\/+|$)/, '').replace(/\/+$/, '');
 
@@ -64,6 +79,7 @@ export class FakeHost implements IAgentHost {
 	readonly commands: { command: string; args: readonly string[]; cwd?: string; noToolStorePath?: boolean }[] = [];
 	readonly logs: { level: LogLevel; message: string }[] = [];
 	onExec: ExecHandler = () => undefined;
+	system?: FakeSystemProbe;
 
 	constructor(private readonly approveAll = true) { }
 

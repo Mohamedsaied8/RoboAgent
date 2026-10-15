@@ -17,7 +17,7 @@ Spec: `requirements_docs/roboagent_req_firmware_agents.md`. Detail: `implementat
 | 7.0a | LLM path: **OpenRouter** via `OpenAiCompatibleClient`; key from `OPENROUTER_API_KEY` / secret storage, model from config (decided 2026-10-15) | ☑ |
 | 7.0b | Test framework: **GoogleTest + GMock** primary, Unity fallback for small MCUs / ESP-IDF (decided 2026-10-15). ⚠ Validation boards still open (STM32 + ST-Link V2; ESP32-S3/C3 USB-JTAG or ESP-PROG) | ◐ |
 | 7.0c | Host prerequisites: superseded by 7.5a — the agents install OpenOCD, GDB, ESP32 tools and SVDs themselves (only udev rules may need root once) | ☑ |
-| 7.0d | Install policy default: implemented as `ask` with a one-time opt-in to `auto` (the recommendation; not yet confirmed by the user) | ◐ |
+| 7.0d | Install policy default: `auto` (decided 2026-10-15) — pinned user-space installs run without prompts; `ask` is an opt-out; root steps always ask | ☑ |
 | 7.1 | P0 — `packages/firmware-agents` scaffold, tsconfig, mocha, boundary test banning `vscode`/`vs/*` imports, RoboAgent header lint glob (gulp wiring deferred to P4, when an extension consumes the package) | ☑ |
 | 7.2 | P0 — Agent kernel: `ILlmClient`, `ITool`, `IToolRegistry` (filtered views), `IAgentHost`, `Agent` ReAct base, `IMessageBus`, `ApprovalRequiredTool`, `ScriptedFakeLlm`, OpenRouter client, Node adapters; independent code + security review, all confirmed findings fixed with regression tests (64 tests) | ☑ |
 | 7.3 | P1 — Embedded ports + `DefaultPlatformFactory` (Abstract Factory) + `ITargetCatalog`; toolchains (arm-none-eabi, ESP-IDF, PlatformIO) with probing and an install plan; build systems (CMake, Make, PlatformIO, ESP-IDF); flashers (OpenOCD, st-flash, idf.py, pio) | ☑ |

@@ -9,7 +9,7 @@ import { ChangeTracker, createFileTools, isSecretPath } from '../agents/tools/fi
 import { ToolContext } from '../kernel/tool';
 import { LlmEvent, LlmRequest } from '../kernel/llm';
 import { callTool, say, ScriptedFakeLlm } from '../llm/scriptedFakeLlm';
-import { FakeHost } from './fakeHost';
+import { FakeHost, FakeSystemProbe } from './fakeHost';
 
 /** The JSON content of the tool result for `callId` in the last request the model saw. */
 function toolResult(llm: ScriptedFakeLlm, callId: string): { error?: string;[key: string]: unknown } {
@@ -219,5 +219,19 @@ suite('FirmwareDevAgent', () => {
 		]);
 		const { applied } = await createFirmwareDevAgent({ llm, host }).handleChangeRequest({ type: 'change-request', bugId: 'b', description: 'fix' });
 		assert.deepStrictEqual([applied.changedFiles, applied.buildSucceeded], [['fw/Src/main.c'], false]);
+	});
+
+	test('install_tools runs sudo and the package manager by their trusted real paths, never by bare name', async () => {
+		const host = firmwareHost();
+		const system = new FakeSystemProbe();
+		system.programs.set('sudo', { path: '/found/sbin/sudo', root: true });
+		system.programs.set('apt-get', { path: '/found/bin/apt-get', root: true });
+		host.system = system;
+		const inner = host.onExec;
+		host.onExec = (command, args, options) => command === 'apt-get' && args[0] === '--version' ? { stdout: 'apt 2.4' } : command === '/found/sbin/sudo' ? {} : inner(command, args, options);
+		const llm = new ScriptedFakeLlm([callTool('i', 'install_tools', { tools: ['cmake'] }), say('done')]);
+		await createFirmwareDevAgent({ llm, host }).run('install cmake');
+		assert.deepStrictEqual(host.commands.filter(c => c.command === '/found/sbin/sudo').map(c => c.args), [['-n', '--', '/found/bin/apt-get', 'install', '-y', 'cmake']]);
+		assert.ok(!host.commands.some(c => c.command === 'sudo'));
 	});
 });

@@ -131,7 +131,7 @@ export function createDevTools(ctx: DevToolContext): AnyTool[] {
 				required: ['components'],
 				additionalProperties: false,
 			},
-			describeCall: (input: { components: string[] }) => `Download into the tool store if missing: ${input.components.map(c => c === 'openocd' ? 'xPack OpenOCD 0.12.0-7 (3 MB)' : 'xPack Arm GNU toolchain 15.2.1 (307 MB)').join('; ')}`,
+			describeCall: async (input: { components: string[] }, context) => `Download into ${context?.host.toolStore?.location ?? 'the tool store'} if missing (pinned, SHA-256 verified): ${[...new Set(input.components)].map(c => c === 'openocd' ? 'xPack OpenOCD 0.12.0-7 (3 MB)' : 'xPack Arm GNU toolchain 15.2.1 (307 MB)').join('; ')}`,
 			invoke: async (input: { components: string[] }, { host, signal }) => {
 				if (!host.toolStore) {
 					throw new ToolError('This host has no tool store; use install_tools (system package manager) instead.');
@@ -168,7 +168,16 @@ export function createDevTools(ctx: DevToolContext): AnyTool[] {
 				}
 				const { command, args } = installCommand(pm, packages);
 				const userCommand = [command, ...args.filter(a => a !== '-n')].join(' ');
-				const result = await host.exec(command, args, { timeoutMs: 20 * 60 * 1000, signal });
+				// Programs that run as root are found by a trusted search (root-owned, not writable by
+				// others) and run by their real path — never by bare name through PATH.
+				const elevated = command === 'sudo';
+				const program = await host.system?.findProgram(command, elevated ? { trustedForRoot: true } : { systemOnly: true });
+				const manager = elevated ? await host.system?.findProgram(args[1], { trustedForRoot: true }) : undefined;
+				if (!program || (elevated && !manager)) {
+					throw new ToolError(`Could not find a trusted ${elevated ? `sudo and ${args[1]}` : command}. Ask the user to run: ${userCommand}`, { command: userCommand });
+				}
+				const finalArgs = elevated ? ['-n', '--', manager!, ...args.slice(2)] : args;
+				const result = await host.exec(program, finalArgs, { timeoutMs: 20 * 60 * 1000, signal, noToolStorePath: true });
 				if (result.exitCode === 0) {
 					return { installed: packages, packageManager: pm };
 				}

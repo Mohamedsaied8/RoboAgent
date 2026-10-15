@@ -6,7 +6,7 @@
 import { createHash } from 'crypto';
 import { IAgentHost, InstalledTool, PlatformId } from '../kernel/host';
 import { archiveFor, TOOL_MANIFEST, ToolId, validateArchiveSpec } from './manifest';
-import { grantsInGrepDump, PROBES, probeCovered, ProbeId } from './probes';
+import { grantsInRuleFile, PROBES, probeCovered, ProbeId, UdevGrants } from './probes';
 
 export type HostOs = 'linux' | 'darwin' | 'win32' | 'other';
 
@@ -73,13 +73,9 @@ async function firstLine(host: IAgentHost, command: string, args: string[], opti
 	return (r.stdout || r.stderr).split('\n').map(l => l.trim()).find(l => l) ?? '';
 }
 
-/** Absolute path of `command` as PATH resolves it (`which` / `where`), or undefined. */
-async function resolveOnPath(ctx: DependencyContext, command: string, systemPathOnly: boolean): Promise<string | undefined> {
-	const r = ctx.os === 'win32'
-		? await ctx.host.exec('where', [command], { timeoutMs: 10_000, noToolStorePath: systemPathOnly })
-		: await ctx.host.exec('/usr/bin/which', [command], { timeoutMs: 10_000, noToolStorePath: systemPathOnly });
-	const first = r.exitCode === 0 ? r.stdout.split(/\r?\n/).map(l => l.trim()).find(Boolean) : undefined;
-	return first && (first.startsWith('/') || /^[A-Za-z]:\\/.test(first)) ? first : undefined;
+/** Absolute path of `command` as a PATH search finds it, or undefined (no system probe, not found). */
+function resolveOnPath(ctx: DependencyContext, command: string, systemPathOnly: boolean): Promise<string | undefined> {
+	return ctx.host.system ? ctx.host.system.findProgram(command, { systemOnly: systemPathOnly }) : Promise.resolve(undefined);
 }
 
 function joinBin(dir: string, name: string, os: HostOs): string {
@@ -183,33 +179,21 @@ export class ExecutableDependency implements IDependency {
 }
 
 /**
- * Root steps run fixed programs by absolute path only: never through PATH (which starts with the
- * tool store), and with arguments the agent chose, never the model.
+ * Programs root steps use. Their locations are found by search (system PATH plus `sbin`
+ * siblings), never through the tool store, and accepted only when root owns them and nobody
+ * else can write them or their folders.
  */
-const ROOT_PROGRAMS: Readonly<Record<'sudo' | 'pkexec' | 'tee' | 'chmod' | 'udevadm' | 'usermod', readonly string[]>> = {
-	sudo: ['/usr/bin/sudo', '/bin/sudo'],
-	pkexec: ['/usr/bin/pkexec', '/bin/pkexec'],
-	tee: ['/usr/bin/tee', '/bin/tee'],
-	chmod: ['/usr/bin/chmod', '/bin/chmod'],
-	udevadm: ['/usr/bin/udevadm', '/bin/udevadm', '/sbin/udevadm', '/usr/sbin/udevadm'],
-	usermod: ['/usr/sbin/usermod', '/sbin/usermod', '/usr/bin/usermod'],
-};
+type RootProgram = 'sudo' | 'pkexec' | 'tee' | 'chmod' | 'udevadm' | 'usermod';
 
-async function locate(ctx: DependencyContext, program: keyof typeof ROOT_PROGRAMS): Promise<string | undefined> {
-	for (const candidate of ROOT_PROGRAMS[program]) {
-		const r = await ctx.host.exec(candidate, [program === 'usermod' ? '--help' : '--version'], { timeoutMs: 10_000, noToolStorePath: true });
-		if (!r.spawnError) {
-			return candidate;
-		}
-	}
-	return undefined;
+function locate(ctx: DependencyContext, program: RootProgram): Promise<string | undefined> {
+	return ctx.host.system ? ctx.host.system.findProgram(program, { trustedForRoot: true }) : Promise.resolve(undefined);
 }
 
 /** Runs one fixed root command: `sudo -n` (passwordless sudo), then `pkexec` if allowed. Never prompts in a terminal. */
-async function runAsRoot(ctx: DependencyContext, program: keyof typeof ROOT_PROGRAMS, args: string[], options: SystemInstallOptions & { input?: string }): Promise<{ ok: boolean; how?: 'sudo' | 'pkexec'; error?: string }> {
+async function runAsRoot(ctx: DependencyContext, program: RootProgram, args: string[], options: SystemInstallOptions & { input?: string }): Promise<{ ok: boolean; how?: 'sudo' | 'pkexec'; error?: string }> {
 	const exe = await locate(ctx, program);
 	if (!exe) {
-		return { ok: false, error: `${program} not found` };
+		return { ok: false, error: `${program} not found (or not root-owned)` };
 	}
 	const run = { timeoutMs: 300_000, noToolStorePath: true, ...options.input !== undefined ? { input: options.input } : {} };
 	const sudo = await locate(ctx, 'sudo');
@@ -234,9 +218,14 @@ async function runAsRoot(ctx: DependencyContext, program: keyof typeof ROOT_PROG
 	return { ok: false, error };
 }
 
-const RULE_DIRS = ['/etc/udev/rules.d', '/lib/udev/rules.d', '/usr/lib/udev/rules.d'];
 /** Our own file name: never overwrites a rules file the user or a package installed. */
-export const RULES_TARGET = '/etc/udev/rules.d/60-roboagent-openocd.rules';
+export const RULES_FILE_NAME = '60-roboagent-openocd.rules';
+
+/** The administrator's rules folder (udev's first, highest-priority one), as discovered on this machine. */
+async function rulesTarget(ctx: DependencyContext): Promise<string | undefined> {
+	const dir = ctx.host.system ? await ctx.host.system.udevAdminDir() : undefined;
+	return dir ? `${dir.replace(/\/+$/, '')}/${RULES_FILE_NAME}` : undefined;
+}
 /** A trusted udev rules file inside a tool-store install, with its pinned content hash. */
 export interface RulesSource {
 	readonly tool: string;
@@ -268,9 +257,10 @@ export class ProbeAccessDependency implements IDependency {
 	}
 
 	private async missingProbes(ctx: DependencyContext): Promise<ProbeId[]> {
-		// Every line of every rules file, prefixed with its file name, so continuations join per file.
-		const r = await ctx.host.exec('grep', ['-rsH', '--include=*.rules', '', ...RULE_DIRS], { timeoutMs: 20_000, maxOutputBytes: 16 * 1024 * 1024, noToolStorePath: true });
-		const grants = grantsInGrepDump(r.stdout);
+		const grants: UdevGrants = { ids: new Set(), products: [] };
+		for (const rules of ctx.host.system ? await ctx.host.system.readUdevRules() : []) {
+			grantsInRuleFile(rules.content, grants);
+		}
 		return this.probes.filter(p => !probeCovered(PROBES[p], grants));
 	}
 
@@ -284,6 +274,9 @@ export class ProbeAccessDependency implements IDependency {
 		if (ctx.os !== 'linux') {
 			return { id: this.id, label: this.label, ok: true, detail: 'not checked on this OS', remedy: 'none' };
 		}
+		if (!ctx.host.system || !(await ctx.host.system.udevRuleDirs()).length) {
+			return { id: this.id, label: this.label, ok: false, detail: 'could not find udev\'s rule folders on this machine', remedy: 'manual', manualStep: 'Install udev rules for the probe (OpenOCD ships contrib/60-openocd.rules) into your udev rules folder.' };
+		}
 		const missing = await this.missingProbes(ctx);
 		if (!missing.length) {
 			return { id: this.id, label: this.label, ok: true, detail: `udev rules grant access to ${this.probes.join(', ')}`, remedy: 'none' };
@@ -293,9 +286,10 @@ export class ProbeAccessDependency implements IDependency {
 
 	async describeSystemChange(ctx: DependencyContext): Promise<string | undefined> {
 		const source = await this.rulesSource(ctx);
+		const target = await rulesTarget(ctx) ?? `<udev rules folder>/${RULES_FILE_NAME}`;
 		return source
-			? `write OpenOCD's udev rules (${source.tool} ${source.version}, after checking their pinned SHA-256) to ${RULES_TARGET} and reload udev`
-			: `install udev rules to ${RULES_TARGET} (needs OpenOCD in the tool store first)`;
+			? `write OpenOCD's udev rules (${source.tool} ${source.version}, after checking their pinned SHA-256) to ${target} and reload udev`
+			: `install udev rules to ${target} (needs OpenOCD in the tool store first)`;
 	}
 
 	async installSystem(ctx: DependencyContext, options: SystemInstallOptions): Promise<InstallOutcome> {
@@ -305,6 +299,10 @@ export class ProbeAccessDependency implements IDependency {
 		const source = await this.rulesSource(ctx);
 		if (!source) {
 			return { id: this.id, ok: false, action: 'needs-user', detail: 'No OpenOCD udev rules file available: run ensure_debug_tools first (it downloads OpenOCD, which ships the rules).' };
+		}
+		const target = await rulesTarget(ctx);
+		if (!target) {
+			return { id: this.id, ok: false, action: 'needs-user', detail: 'Could not find udev\'s rule folders on this machine.' };
 		}
 		// The content is checked here, in memory, and handed to root over stdin: no file path
 		// that something else could swap between the check and the copy.
@@ -319,22 +317,22 @@ export class ProbeAccessDependency implements IDependency {
 			return { id: this.id, ok: false, action: 'needs-user', detail: `The udev rules in the tool store do not match the pinned file (SHA-256 ${actual}); refusing to install them. Reinstall OpenOCD with ensure_debug_tools.` };
 		}
 		// The user's own command checks the file's hash again at the moment they run it.
-		const userCommand = `echo ${shellQuote(`${source.sha256}  ${source.absolutePath}`)} | sha256sum -c - && sudo install -m 0644 -- ${shellQuote(source.absolutePath)} ${RULES_TARGET} && sudo udevadm control --reload-rules && sudo udevadm trigger`;
-		const written = await runAsRoot(ctx, 'tee', [RULES_TARGET], { ...options, input: content });
+		const userCommand = `echo ${shellQuote(`${source.sha256}  ${source.absolutePath}`)} | sha256sum -c - && sudo install -m 0644 -- ${shellQuote(source.absolutePath)} ${shellQuote(target)} && sudo udevadm control --reload-rules && sudo udevadm trigger`;
+		const written = await runAsRoot(ctx, 'tee', [target], { ...options, input: content });
 		if (!written.ok) {
 			return { id: this.id, ok: false, action: 'needs-user', detail: `Installing udev rules needs root (${written.error}).`, userCommand };
 		}
 		// tee creates the file 0644 under root's umask; with passwordless sudo make it explicit, and
 		// reload udev (udevd also notices new rule files by itself). With pkexec, avoid more dialogs.
 		if (written.how === 'sudo') {
-			await runAsRoot(ctx, 'chmod', ['0644', RULES_TARGET], {});
+			await runAsRoot(ctx, 'chmod', ['0644', target], {});
 			await runAsRoot(ctx, 'udevadm', ['control', '--reload-rules'], {});
 			await runAsRoot(ctx, 'udevadm', ['trigger', '--subsystem-match=usb'], {});
 		}
 		const after = await this.missingProbes(ctx);
 		return after.length
-			? { id: this.id, ok: false, action: 'system-change', detail: `Rules written to ${RULES_TARGET}, but still no rule for ${after.join(', ')}.`, userCommand }
-			: { id: this.id, ok: true, action: 'system-change', detail: `Installed ${RULES_TARGET} (via ${written.how}). Unplug and re-plug the probe.` };
+			? { id: this.id, ok: false, action: 'system-change', detail: `Rules written to ${target}, but still no rule for ${after.join(', ')}.`, userCommand }
+			: { id: this.id, ok: true, action: 'system-change', detail: `Installed ${target} (via ${written.how}). Unplug and re-plug the probe.` };
 	}
 
 	/**

@@ -5,10 +5,11 @@
 
 import { realpathSync } from 'fs';
 import * as path from 'path';
-import { ApprovalRequest, ExecOptions, ExecResult, IAgentHost, IFileSystem, IToolStore, LogLevel } from '../../kernel/host';
+import { ApprovalRequest, ExecOptions, ExecResult, IAgentHost, IFileSystem, ISystemProbe, IToolStore, LogLevel } from '../../kernel/host';
 import { redactSecrets } from '../../kernel/redact';
 import { isInside, NodeFileSystem } from './nodeFileSystem';
 import { runProcess } from './nodeProcessRunner';
+import { NodeSystemProbe } from './nodeSystemProbe';
 
 /** Environment variables never passed to child processes (in addition to {@link SECRET_ENV_PATTERN}). */
 export const DEFAULT_SECRET_ENV_NAMES: readonly string[] = ['OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'];
@@ -32,11 +33,19 @@ export interface NodeAgentHostOptions {
 	/** Where agents install tools; its `onPath` tools come first on children's PATH. */
 	readonly toolStore?: IToolStore;
 	/**
-	 * `ask` (default): every approval goes to `approve`. `auto`: tool installs into the tool
-	 * store (category `install`) are approved without asking; everything else still asks.
+	 * `auto` (default): tool installs into the tool store (category `install`: pinned,
+	 * hash-verified, user space only) are approved without asking. `ask`: they go to `approve`
+	 * like everything else. Root steps (`system`), edits, builds and hardware always ask.
 	 */
 	readonly installPolicy?: 'ask' | 'auto';
+	/** Tools whose `install` approvals the `auto` policy covers (default: the two pinned-download tools). */
+	readonly autoInstallTools?: readonly string[];
+	/** System layout discovery (default: {@link NodeSystemProbe} on this machine). */
+	readonly system?: ISystemProbe;
 }
+
+/** The only tools that download pinned, hash-verified archives into the tool store. */
+export const DEFAULT_AUTO_INSTALL_TOOLS: readonly string[] = ['ensure_debug_tools', 'install_toolchain'];
 
 const LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
 
@@ -75,6 +84,7 @@ export function assertStoreOutsideWorkspace(store: string, workspace: string): v
 export class NodeAgentHost implements IAgentHost {
 	readonly fs: IFileSystem;
 	readonly toolStore?: IToolStore;
+	readonly system: ISystemProbe;
 	private readonly childEnv: Record<string, string | undefined>;
 
 	constructor(private readonly options: NodeAgentHostOptions) {
@@ -85,6 +95,11 @@ export class NodeAgentHost implements IAgentHost {
 		}
 		const secretValues = new Set(options.secrets ?? []);
 		const secretNames = new Set(options.secretEnvNames ?? DEFAULT_SECRET_ENV_NAMES);
+		this.system = options.system ?? new NodeSystemProbe({
+			env: options.env ?? process.env,
+			workspaceRoot: options.root,
+			toolStoreBins: () => this.toolStore ? this.toolStore.binPaths() : Promise.resolve([]),
+		});
 		this.childEnv = Object.fromEntries(Object.entries(options.env ?? process.env)
 			.filter(([name, value]) => !secretNames.has(name) && !SECRET_ENV_PATTERN.test(name) && !(value !== undefined && secretValues.has(value))));
 	}
@@ -101,7 +116,7 @@ export class NodeAgentHost implements IAgentHost {
 	}
 
 	approve(request: ApprovalRequest): Promise<boolean> {
-		if (this.options.installPolicy === 'auto' && request.category === 'install') {
+		if ((this.options.installPolicy ?? 'auto') === 'auto' && request.category === 'install' && (this.options.autoInstallTools ?? DEFAULT_AUTO_INSTALL_TOOLS).includes(request.toolName)) {
 			this.log('info', `Auto-approved (install policy "auto"): ${request.summary}`);
 			return Promise.resolve(true);
 		}

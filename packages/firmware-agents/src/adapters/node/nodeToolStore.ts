@@ -23,9 +23,22 @@ export interface NodeToolStoreOptions {
 	readonly platform?: PlatformId | null;
 }
 
-/** `~/.roboagent/tools`, or `$ROBOAGENT_TOOLS_DIR` when set. */
-export function defaultToolStoreRoot(env: Readonly<Record<string, string | undefined>> = process.env): string {
-	return env.ROBOAGENT_TOOLS_DIR || path.join(os.homedir(), '.roboagent', 'tools');
+/**
+ * `$ROBOAGENT_TOOLS_DIR` when set; otherwise `roboagent/tools` in the platform's per-user data
+ * folder, taken from the environment: `$XDG_DATA_HOME` (Linux; its default `~/.local/share`),
+ * `%LOCALAPPDATA%` (Windows), `~/Library/Application Support` (macOS).
+ */
+export function defaultToolStoreRoot(env: Readonly<Record<string, string | undefined>> = process.env, platform: NodeJS.Platform = process.platform, home: string = os.homedir()): string {
+	if (env.ROBOAGENT_TOOLS_DIR) {
+		return env.ROBOAGENT_TOOLS_DIR;
+	}
+	const dataDir = platform === 'win32'
+		? env.LOCALAPPDATA || path.join(home, 'AppData', 'Local')
+		: platform === 'darwin'
+			? path.join(home, 'Library', 'Application Support')
+			// The XDG spec: a relative $XDG_DATA_HOME is invalid and must be ignored.
+			: env.XDG_DATA_HOME && path.isAbsolute(env.XDG_DATA_HOME) ? env.XDG_DATA_HOME : path.join(home, '.local', 'share');
+	return path.join(dataDir, 'roboagent', 'tools');
 }
 
 export function currentPlatform(platform: NodeJS.Platform = process.platform, arch: string = process.arch): PlatformId | undefined {

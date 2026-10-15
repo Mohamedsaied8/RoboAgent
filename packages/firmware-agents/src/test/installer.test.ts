@@ -17,7 +17,7 @@ import { ToolRegistry } from '../kernel/toolRegistry';
 import { Agent, AgentProfile } from '../kernel/agent';
 import { ILlmClient } from '../kernel/llm';
 import { callTool, say, ScriptedFakeLlm } from '../llm/scriptedFakeLlm';
-import { FakeHost } from './fakeHost';
+import { FakeHost, FakeSystemProbe } from './fakeHost';
 
 /** In-memory tool store: "installs" by recording the spec under /store/<id>/<version>. */
 class FakeToolStore implements IToolStore {
@@ -53,20 +53,27 @@ class StoreHost extends FakeHost {
 	}
 }
 
+/** Where the fake machine's programs and udev folders are — deliberately not real paths. */
+const SBIN = '/discovered/sbin';
+const ADMIN_RULES = '/udev-admin/rules.d';
+
 /** Scripts a Linux machine: `present` programs answer `--version`, rule files and groups as given. */
 function machine(host: FakeHost, o: { present?: Record<string, string>; rules?: string; groups?: string; dbGroups?: string; sudo?: boolean; pkexec?: boolean }) {
-	const ROOT = new Set(['sudo', 'pkexec', 'tee', 'chmod', 'udevadm', 'usermod']);
+	const system = new FakeSystemProbe();
+	for (const name of ['sudo', 'pkexec', 'tee', 'chmod', 'udevadm', 'usermod']) {
+		system.programs.set(name, { path: `${SBIN}/${name}`, root: true });
+	}
+	for (const name of Object.keys(o.present ?? {})) {
+		system.programs.set(name, { path: `/discovered/bin/${name}` });
+	}
+	system.ruleDirs = [ADMIN_RULES, '/udev-vendor/rules.d'];
+	system.ruleFiles = o.rules ? [{ file: '/udev-vendor/rules.d/49-test.rules', content: o.rules }] : [];
+	host.system = system;
 	host.onExec = (command, args) => {
 		const base = command.split('/').pop()!;
-		if (command.startsWith('/') && ROOT.has(base) && (args[0] === '--version' || args[0] === '--help')) {
-			return { stdout: `${base} 1.0\n` };
-		}
-		if (args[0] === '--version') {
+		if (args[0] === '--version' && !command.startsWith('/')) {
 			const v = o.present?.[command];
 			return v ? { stdout: `${v}\n` } : { exitCode: null, spawnError: `spawn ${command} ENOENT` };
-		}
-		if (command === 'grep') {
-			return { stdout: (o.rules ?? '').split('\n').map(l => `/etc/udev/rules.d/49-test.rules:${l}`).join('\n') };
 		}
 		if (command === 'id') {
 			if (args[0] === '-un') {
@@ -77,11 +84,14 @@ function machine(host: FakeHost, o: { present?: Record<string, string>; rules?: 
 		if (command === 'getent') {
 			return args[1] === 'dialout' ? { stdout: 'dialout:x:20:\n' } : { exitCode: 2 };
 		}
-		if (base === 'sudo') {
+		if (command === `${SBIN}/sudo`) {
 			return o.sudo ? {} : { exitCode: 1, stderr: 'sudo: a password is required\n' };
 		}
-		if (base === 'pkexec') {
+		if (command === `${SBIN}/pkexec`) {
 			return o.pkexec ? {} : { exitCode: 126, stderr: 'Error executing command as another user: Not authorized\n' };
+		}
+		if (command.startsWith('/') && args[0] === '--version') {
+			return base === 'openocd' || base.includes('gdb') ? undefined : { exitCode: 127, spawnError: 'ENOENT' };
 		}
 		return { exitCode: 127, spawnError: `spawn ${command} ENOENT` };
 	};
@@ -173,10 +183,8 @@ suite('debug dependencies', () => {
 		const host = new StoreHost();
 		machine(host, { present: { 'openocd': 'Open On-Chip Debugger 0.11.0', 'gdb-multiarch': 'GNU gdb (Ubuntu 12.1) 12.1' } });
 		const [ocd, gdb] = debugRequirements();
-		const inner = host.onExec;
-		host.onExec = (command, args, options) => command === '/usr/bin/which' ? { stdout: `/usr/bin/${args[0]}\n` } : inner(command, args, options);
-		assert.deepStrictEqual(await ocd.check(ctx(host)), { id: 'openocd', label: 'OpenOCD', ok: true, detail: '/usr/bin/openocd on PATH', command: '/usr/bin/openocd', version: 'Open On-Chip Debugger 0.11.0', source: 'path', remedy: 'none' });
-		assert.strictEqual((await gdb.check(ctx(host))).command, '/usr/bin/gdb-multiarch');
+		assert.deepStrictEqual(await ocd.check(ctx(host)), { id: 'openocd', label: 'OpenOCD', ok: true, detail: '/discovered/bin/openocd on PATH', command: '/discovered/bin/openocd', version: 'Open On-Chip Debugger 0.11.0', source: 'path', remedy: 'none' });
+		assert.strictEqual((await gdb.check(ctx(host))).command, '/discovered/bin/gdb-multiarch');
 
 		const [espOcd] = debugRequirements({ target: new DefaultTargetCatalog().resolve('esp32s3')! });
 		const status = await espOcd.check(ctx(host));
@@ -184,11 +192,15 @@ suite('debug dependencies', () => {
 		// …and the ESP32 lookup leaves the tool store off PATH, so xPack's openocd cannot hide an ESP-IDF one.
 		assert.deepStrictEqual(host.commands.filter(c => c.command === 'openocd').map(c => !!c.noToolStorePath), [false, true]);
 		// An Espressif OpenOCD on the system PATH is reported by absolute path, resolved without the store.
-		host.onExec = (command, args) => command === 'openocd' && args[0] === '--version' ? { stdout: 'Open On-Chip Debugger v0.12.0-esp32-20260703\n' } : command === '/usr/bin/which' ? { stdout: '/opt/esp/openocd-esp32/bin/openocd\n' } : { exitCode: 127, spawnError: 'ENOENT' };
-		host.commands.length = 0;
+		host.onExec = (command, args) => command === 'openocd' && args[0] === '--version' ? { stdout: 'Open On-Chip Debugger v0.12.0-esp32-20260703\n' } : { exitCode: 127, spawnError: 'ENOENT' };
+		const searches: { name: string; systemOnly?: boolean }[] = [];
+		host.system!.findProgram = async (name, options) => {
+			searches.push({ name, ...options?.systemOnly ? { systemOnly: true } : {} });
+			return '/found/esp-idf/openocd-esp32/bin/openocd';
+		};
 		const esp = await espOcd.check(ctx(host));
-		assert.deepStrictEqual([esp.ok, esp.command], [true, '/opt/esp/openocd-esp32/bin/openocd']);
-		assert.ok(host.commands.find(c => c.command === '/usr/bin/which')?.noToolStorePath);
+		assert.deepStrictEqual([esp.ok, esp.command], [true, '/found/esp-idf/openocd-esp32/bin/openocd']);
+		assert.deepStrictEqual(searches, [{ name: 'openocd', systemOnly: true }]);
 	});
 
 	test('missing tools are installable in user space when the store has a pinned archive, else manual', async () => {
@@ -238,8 +250,8 @@ suite('debug dependencies', () => {
 		machine(host, { rules: STLINK_RULES });
 		const refused = await new ProbeAccessDependency(['esp-usb-jtag'], [rulesSource]).installSystem(ctx(host), {});
 		assert.deepStrictEqual([refused.ok, refused.action], [false, 'needs-user']);
-		assert.strictEqual(refused.userCommand, `echo '${rulesSource.sha256}  /store/xpack-openocd/0.12.0-7/contrib/60-openocd.rules' | sha256sum -c - && sudo install -m 0644 -- /store/xpack-openocd/0.12.0-7/contrib/60-openocd.rules /etc/udev/rules.d/60-roboagent-openocd.rules && sudo udevadm control --reload-rules && sudo udevadm trigger`);
-		assert.ok(!host.commands.some(c => c.command.endsWith('pkexec') && c.args[0] !== '--version'), 'pkexec only when allowed');
+		assert.strictEqual(refused.userCommand, `echo '${rulesSource.sha256}  /store/xpack-openocd/0.12.0-7/contrib/60-openocd.rules' | sha256sum -c - && sudo install -m 0644 -- /store/xpack-openocd/0.12.0-7/contrib/60-openocd.rules /udev-admin/rules.d/60-roboagent-openocd.rules && sudo udevadm control --reload-rules && sudo udevadm trigger`);
+		assert.ok(!host.commands.some(c => c.command.endsWith('pkexec')), 'pkexec only when allowed');
 	});
 
 	test('with passwordless sudo the verified rules go to root over stdin, by absolute paths, into our own file', async () => {
@@ -249,18 +261,19 @@ suite('debug dependencies', () => {
 		machine(host, { rules: STLINK_RULES, sudo: true });
 		const inner = host.onExec;
 		host.onExec = (command, args, options) => {
-			if (command === '/usr/bin/sudo' && args[2] === '/usr/bin/tee') {
+			if (command === `${SBIN}/sudo` && args[2] === `${SBIN}/tee`) {
 				written = options.input ?? '';
+				host.system!.ruleFiles = [...host.system!.ruleFiles, { file: `${ADMIN_RULES}/60-roboagent-openocd.rules`, content: written }];
 			}
-			return command === 'grep' && written ? { stdout: `/etc/udev/rules.d/60-roboagent-openocd.rules:${written}` } : inner(command, args, options);
+			return inner(command, args, options);
 		};
 		const done = await new ProbeAccessDependency(['esp-usb-jtag'], [rulesSource]).installSystem(ctx(host), {});
 		assert.deepStrictEqual([done.ok, done.action, written], [true, 'system-change', RULES]);
-		assert.deepStrictEqual(host.commands.filter(c => c.command === '/usr/bin/sudo' && c.args[0] === '-n').map(c => c.args.join(' ')), [
-			'-n -- /usr/bin/tee /etc/udev/rules.d/60-roboagent-openocd.rules',
-			'-n -- /usr/bin/chmod 0644 /etc/udev/rules.d/60-roboagent-openocd.rules',
-			'-n -- /usr/bin/udevadm control --reload-rules',
-			'-n -- /usr/bin/udevadm trigger --subsystem-match=usb',
+		assert.deepStrictEqual(host.commands.filter(c => c.command === `${SBIN}/sudo`).map(c => c.args.join(' ')), [
+			`-n -- ${SBIN}/tee ${ADMIN_RULES}/60-roboagent-openocd.rules`,
+			`-n -- ${SBIN}/chmod 0644 ${ADMIN_RULES}/60-roboagent-openocd.rules`,
+			`-n -- ${SBIN}/udevadm control --reload-rules`,
+			`-n -- ${SBIN}/udevadm trigger --subsystem-match=usb`,
 		]);
 	});
 
@@ -272,7 +285,7 @@ suite('debug dependencies', () => {
 			const pinned = content.includes('PROGRAM') ? { ...rulesSource, sha256: createHash('sha256').update(content).digest('hex') } : rulesSource;
 			const r = await new ProbeAccessDependency(['esp-usb-jtag'], [pinned]).installSystem(ctx(host), {});
 			assert.deepStrictEqual([r.ok, /do not match the pinned file/.test(r.detail)], [false, true], content);
-			assert.ok(!host.commands.some(c => c.args.includes('/usr/bin/tee')), 'nothing written as root');
+			assert.ok(!host.commands.some(c => c.args.includes(`${SBIN}/tee`)), 'nothing written as root');
 		}
 	});
 
@@ -281,7 +294,7 @@ suite('debug dependencies', () => {
 		await storeWithRules(host);
 		machine(host, { pkexec: true });
 		await new ProbeAccessDependency(['esp-usb-jtag'], [rulesSource]).installSystem(ctx(host), { allowGraphicalPrompt: true });
-		assert.ok(host.commands.some(c => c.command === '/usr/bin/pkexec' && c.args[0] === '/usr/bin/tee'));
+		assert.ok(host.commands.some(c => c.command === `${SBIN}/pkexec` && c.args[0] === `${SBIN}/tee`));
 	});
 
 	test('the default rules sources are the pinned OpenOCD files from the manifest', async () => {
@@ -341,7 +354,7 @@ suite('debug setup tools', () => {
 		await new SetupAgent(llm, host).run('set up debugging');
 		assert.deepStrictEqual(host.approvals.map(a => [a.toolName, a.category]), [['ensure_debug_tools', 'install'], ['install_probe_access', 'system']]);
 		assert.match(host.approvals[0].summary, /^For STM32F103C8T6: download xPack OpenOCD .* 0\.12\.0-7 \(3 MB\); xPack GNU Arm Embedded GCC .* 15\.2\.1-1\.1 \(307 MB\) into \/store/);
-		assert.match(host.approvals[1].summary, /^For esp32s3, as root: write OpenOCD's udev rules \(xpack-openocd 0\.12\.0-7, after checking their pinned SHA-256\) to \/etc\/udev\/rules.d\/60-roboagent-openocd.rules and reload udev; add mohamed to the dialout group/);
+		assert.match(host.approvals[1].summary, /^For esp32s3, as root: write OpenOCD's udev rules \(xpack-openocd 0\.12\.0-7, after checking their pinned SHA-256\) to \/udev-admin\/rules.d\/60-roboagent-openocd.rules and reload udev; add mohamed to the dialout group/);
 		const checked = JSON.parse((llm.requests[1].messages.find(m => m.role === 'tool') as { content: string }).content);
 		assert.deepStrictEqual([checked.target, checked.ok, checked.statuses.map((s: { id: string }) => s.id)], ['STM32F103C8T6', false, ['openocd', 'gdb', 'probe-usb-access']]);
 		assert.match(checked.next, /ensure_debug_tools can download OpenOCD, GDB for Arm Cortex-M/);
@@ -359,10 +372,25 @@ suite('debug setup tools', () => {
 		assert.match(host.approvals[1].summary, /add mohamed to the dialout group/);
 	});
 
+	test('installs are approved automatically by default; "ask" sends them to the user; root steps always ask', async () => {
+		const base = { agentId: 'a', toolName: 'ensure_debug_tools', risk: 'write' as const, summary: 's', input: {} };
+		const asked: string[] = [];
+		const byDefault = new NodeAgentHost({ root: '.', write: () => { }, approve: async r => { asked.push(r.category); return false; } });
+		assert.deepStrictEqual([await byDefault.approve({ ...base, category: 'install' }), await byDefault.approve({ ...base, category: 'system' })], [true, false]);
+		const askHost = new NodeAgentHost({ root: '.', installPolicy: 'ask', write: () => { }, approve: async r => { asked.push(r.category); return false; } });
+		assert.strictEqual(await askHost.approve({ ...base, category: 'install' }), false);
+		assert.deepStrictEqual(asked, ['system', 'install']);
+		// Without any approve callback (unattended), installs still run and everything else is denied.
+		const unattended = new NodeAgentHost({ root: '.', write: () => { } });
+		assert.deepStrictEqual([await unattended.approve({ ...base, category: 'install' }), await unattended.approve({ ...base, category: 'hardware', risk: 'hardware' })], [true, false]);
+		// Only the two pinned-download tools are covered; any other tool claiming "install" still asks.
+		assert.strictEqual(await unattended.approve({ ...base, toolName: 'some_new_tool', category: 'install' }), false);
+	});
+
 	test('the "auto" install policy approves installs without asking, but never root steps', async () => {
 		const asked: string[] = [];
 		const host = new NodeAgentHost({ root: '.', installPolicy: 'auto', write: () => { }, approve: async r => { asked.push(r.category); return false; } });
-		const base = { agentId: 'a', toolName: 't', risk: 'write' as const, summary: 's', input: {} };
+		const base = { agentId: 'a', toolName: 'ensure_debug_tools', risk: 'write' as const, summary: 's', input: {} };
 		assert.deepStrictEqual([
 			await host.approve({ ...base, category: 'install' }),
 			await host.approve({ ...base, category: 'system' }),

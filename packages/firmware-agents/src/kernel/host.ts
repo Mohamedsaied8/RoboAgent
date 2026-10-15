@@ -16,6 +16,35 @@ export interface IAgentHost {
 	progress(message: string): void;
 	/** Where agents install the tools they need (user space, outside any workspace). Optional. */
 	readonly toolStore?: IToolStore;
+	/** Discovers the system layout (programs, udev folders) by search. Optional. */
+	readonly system?: ISystemProbe;
+}
+
+export interface ProgramSearchOptions {
+	/** Search the system PATH only, not the tool store's folders. */
+	readonly systemOnly?: boolean;
+	/** For programs run as root: only files (and folders) owned by root and not writable by others. Implies `systemOnly`. */
+	readonly trustedForRoot?: boolean;
+}
+
+export interface UdevRuleFile {
+	readonly file: string;
+	readonly content: string;
+}
+
+/**
+ * Port: facts about the machine, found by search rather than hard-coded paths. Implementations
+ * search PATH for programs and ask the system itself where udev keeps its rules.
+ */
+export interface ISystemProbe {
+	/** Absolute path of a program, or undefined when it is not found (or not trusted for root). */
+	findProgram(name: string, options?: ProgramSearchOptions): Promise<string | undefined>;
+	/** udev's rule folders on this machine in udev's priority order (first = the administrator's folder); empty when not Linux/udev. */
+	udevRuleDirs(): Promise<string[]>;
+	/** udev's administrator folder (where root steps write), or undefined when it is missing or untrusted. */
+	udevAdminDir(): Promise<string | undefined>;
+	/** The rules udev applies (overrides and /dev/null masks taken into account). */
+	readUdevRules(): Promise<UdevRuleFile[]>;
 }
 
 /** Paths are relative to the host's workspace root; implementations refuse paths that escape it. */
