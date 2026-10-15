@@ -130,8 +130,12 @@ export async function runProcess(root: string, command: string, args: readonly s
 				shell: false,
 				detached: process.platform !== 'win32', // own process group, see killTree
 				windowsHide: true,
-				stdio: ['ignore', 'pipe', 'pipe'],
+				stdio: [options.input !== undefined ? 'pipe' : 'ignore', 'pipe', 'pipe'],
 			});
+			if (options.input !== undefined) {
+				child.stdin!.on('error', () => { }); // the program may exit without reading it
+				child.stdin!.end(options.input);
+			}
 		} catch (err) {
 			resolve(failed(err instanceof Error ? err.message : String(err)));
 			return;

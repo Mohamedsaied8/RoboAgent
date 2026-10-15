@@ -3,9 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ApprovalRequest, ExecOptions, ExecResult, IAgentHost, IFileSystem, LogLevel } from '../../kernel/host';
+import { realpathSync } from 'fs';
+import * as path from 'path';
+import { ApprovalRequest, ExecOptions, ExecResult, IAgentHost, IFileSystem, IToolStore, LogLevel } from '../../kernel/host';
 import { redactSecrets } from '../../kernel/redact';
-import { NodeFileSystem } from './nodeFileSystem';
+import { isInside, NodeFileSystem } from './nodeFileSystem';
 import { runProcess } from './nodeProcessRunner';
 
 /** Environment variables never passed to child processes (in addition to {@link SECRET_ENV_PATTERN}). */
@@ -27,29 +29,82 @@ export interface NodeAgentHostOptions {
 	readonly minLogLevel?: LogLevel;
 	/** Environment children start from (default: this process's). */
 	readonly env?: Readonly<Record<string, string | undefined>>;
+	/** Where agents install tools; its `onPath` tools come first on children's PATH. */
+	readonly toolStore?: IToolStore;
+	/**
+	 * `ask` (default): every approval goes to `approve`. `auto`: tool installs into the tool
+	 * store (category `install`) are approved without asking; everything else still asks.
+	 */
+	readonly installPolicy?: 'ask' | 'auto';
 }
 
 const LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
 
+/** Real path of `p`; for a path that does not exist yet, of its deepest existing ancestor plus the rest. */
+function realOrResolved(p: string): string {
+	let existing = path.resolve(p);
+	const rest: string[] = [];
+	for (; ;) {
+		try {
+			return path.join(realpathSync(existing), ...rest);
+		} catch {
+			const parent = path.dirname(existing);
+			if (parent === existing) {
+				return path.resolve(p);
+			}
+			rest.unshift(path.basename(existing));
+			existing = parent;
+		}
+	}
+}
+
+/**
+ * The tool store holds programs the agents run, some by absolute path from read-only checks:
+ * it must be somewhere the agents' file tools cannot write, so never inside the workspace (nor
+ * the workspace inside it).
+ */
+export function assertStoreOutsideWorkspace(store: string, workspace: string): void {
+	const s = realOrResolved(store);
+	const w = realOrResolved(workspace);
+	if (isInside(w, s) || isInside(s, w)) {
+		throw new Error(`The tool store (${store}) must not be inside the workspace (${workspace}) or contain it; set ROBOAGENT_TOOLS_DIR to a folder outside it.`);
+	}
+}
+
 /** {@link IAgentHost} for plain Node: the CLI, the MCP server, CI and tests. */
 export class NodeAgentHost implements IAgentHost {
 	readonly fs: IFileSystem;
+	readonly toolStore?: IToolStore;
 	private readonly childEnv: Record<string, string | undefined>;
 
 	constructor(private readonly options: NodeAgentHostOptions) {
 		this.fs = new NodeFileSystem(options.root);
+		if (options.toolStore) {
+			assertStoreOutsideWorkspace(options.toolStore.location, options.root);
+			this.toolStore = options.toolStore;
+		}
 		const secretValues = new Set(options.secrets ?? []);
 		const secretNames = new Set(options.secretEnvNames ?? DEFAULT_SECRET_ENV_NAMES);
 		this.childEnv = Object.fromEntries(Object.entries(options.env ?? process.env)
 			.filter(([name, value]) => !secretNames.has(name) && !SECRET_ENV_PATTERN.test(name) && !(value !== undefined && secretValues.has(value))));
 	}
 
-	exec(command: string, args: readonly string[], options?: ExecOptions): Promise<ExecResult> {
+	async exec(command: string, args: readonly string[], options?: ExecOptions): Promise<ExecResult> {
+		let baseEnv = this.childEnv;
+		const bins = this.toolStore && !options?.noToolStorePath ? await this.toolStore.binPaths() : [];
+		if (bins.length) {
+			const key = Object.keys(baseEnv).find(k => k.toUpperCase() === 'PATH') ?? 'PATH';
+			baseEnv = { ...baseEnv, [key]: [...bins, baseEnv[key]].filter(Boolean).join(path.delimiter) };
+		}
 		// Tool output goes to the model and the UI; keep secrets out of both even if a child prints one.
-		return runProcess(this.options.root, command, args, { ...options, baseEnv: this.childEnv, redact: text => this.redact(text) });
+		return runProcess(this.options.root, command, args, { ...options, baseEnv, redact: text => this.redact(text) });
 	}
 
 	approve(request: ApprovalRequest): Promise<boolean> {
+		if (this.options.installPolicy === 'auto' && request.category === 'install') {
+			this.log('info', `Auto-approved (install policy "auto"): ${request.summary}`);
+			return Promise.resolve(true);
+		}
 		return this.options.approve ? this.options.approve(request) : Promise.resolve(false);
 	}
 

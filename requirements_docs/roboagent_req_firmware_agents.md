@@ -195,6 +195,7 @@ registers, memory, SFR fields, backtrace, crash decode, RTOS snapshot), `ChangeR
 | **R7.7** | All hardware-writing / file-writing / installing tools are approval-gated in every host. |
 | **R7.8** | The same seeded-bug scenario runs from RoboAgent chat, from `fwagent`, and from an MCP client. |
 | **R7.9** | Missing probe / toolchain / gateway capability degrades gracefully with an actionable message (no crash, no hang). |
+| **R7.10** | The debugging module installs its own dependencies (OpenOCD / openocd-esp32, the target's GDB, SVD files, probe udev rules) without manual setup: user-space installs from pinned, hash-verified vendor archives into a managed tool store, the system package manager as fallback, and root used only for udev rules (`sudo -n` / `pkexec`, else one exact command). Installs follow the host's install policy (`ask` by default, one-time opt-in to `auto`). |
 
 ---
 
@@ -204,7 +205,7 @@ registers, memory, SFR fields, backtrace, crash decode, RTOS snapshot), `ChangeR
 |---|---|---|
 | P0 | Package scaffold + build wiring + agent kernel, fake LLM, message bus, approval decorator | unit tests with `ScriptedFakeLlm` |
 | P1 | Dev agent: toolchain detection, CMake/Make/PlatformIO/ESP-IDF strategies, diagnostic parser, size report, flash | R7.2 |
-| P2a | STM32 debug: OpenOCD + GDB/MI client, Cortex-M arch, SVD decoder, fault decoder | recorded GDB/MI transcripts, then real ST-Link (R7.3) |
+| P2a | Self-install framework (tool manifest, tool store, dependency resolver) + STM32 debug: OpenOCD + GDB/MI client, Cortex-M arch, SVD decoder, fault decoder | clean-machine self-install (R7.10); recorded GDB/MI transcripts, then real ST-Link (R7.3) |
 | P2b | ESP32 debug: openocd-esp32, Xtensa/RISC-V arch, panic-log + core-dump crash sources, serial port | R7.4 |
 | P2c | FreeRTOS awareness + analyses | seeded stack overflow / deadlock / ISR-priority bugs (R7.5) |
 | P2d | Optional Rust/probe-rs sidecar spike (1 week, go/no-go) as a second `ITargetSession` backend; exposes a GDB server so expressions still go through GDB | spike criteria in the implementation plan |

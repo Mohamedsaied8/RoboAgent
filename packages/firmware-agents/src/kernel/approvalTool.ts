@@ -17,19 +17,27 @@ export class ApprovalRequiredTool<I, O> implements ITool<I, O> {
 	get description() { return this.inner.description; }
 	get inputSchema() { return this.inner.inputSchema; }
 	get risk() { return this.inner.risk; }
+	get category() { return this.inner.category; }
 
-	describeCall(input: I): string {
-		return this.inner.describeCall?.(input) ?? `Run ${this.inner.name}`;
+	describeCall(input: I, context?: ToolContext): string | Promise<string> {
+		return this.inner.describeCall?.(input, context) ?? `Run ${this.inner.name}`;
 	}
 
 	async invoke(input: I, context: ToolContext): Promise<O> {
 		const risk = this.inner.risk;
 		if (risk !== 'read') {
+			let summary: string;
+			try {
+				summary = await this.describeCall(input, context);
+			} catch (err) {
+				throw new ToolError(`Cannot describe "${this.inner.name}" for approval: ${err instanceof Error ? err.message : String(err)}`);
+			}
 			const approved = await raceAbort(context.host.approve({
 				agentId: context.agentId,
 				toolName: this.inner.name,
 				risk,
-				summary: this.describeCall(input),
+				category: this.inner.category ?? (risk === 'hardware' ? 'hardware' : 'edit'),
+				summary,
 				input,
 			}).catch(err => {
 				// A broken approval UI must not look like the user's decision, but it still denies.

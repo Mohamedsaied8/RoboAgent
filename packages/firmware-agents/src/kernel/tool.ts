@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IAgentHost } from './host';
+import { ApprovalCategory, IAgentHost } from './host';
 import { JsonSchema } from './jsonSchema';
 import { ToolSpec } from './llm';
 
@@ -28,8 +28,10 @@ export interface ITool<I = unknown, O = unknown> {
 	readonly description: string;
 	readonly inputSchema: JsonSchema;
 	readonly risk: ToolRisk;
-	/** One line for approval prompts and logs. */
-	describeCall?(input: I): string;
+	/** Approval category (default: `edit` for write tools, `hardware` for hardware tools). */
+	readonly category?: ApprovalCategory;
+	/** One line for approval prompts and logs; may look at the host to say exactly what will happen. */
+	describeCall?(input: I, context?: ToolContext): string | Promise<string>;
 	invoke(input: I, context: ToolContext): Promise<O>;
 }
 

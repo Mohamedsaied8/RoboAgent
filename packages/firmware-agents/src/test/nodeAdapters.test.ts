@@ -86,7 +86,7 @@ suite('Node adapters', () => {
 		test('denies approvals by default and redacts secrets from logs', async () => {
 			const lines: string[] = [];
 			const host = new NodeAgentHost({ root, write: l => lines.push(l), secrets: ['my-private-token'], minLogLevel: 'info' });
-			assert.strictEqual(await host.approve({ agentId: 'a', toolName: 'flash', risk: 'hardware', summary: 's', input: {} }), false);
+			assert.strictEqual(await host.approve({ agentId: 'a', toolName: 'flash', risk: 'hardware', category: 'hardware', summary: 's', input: {} }), false);
 			host.log('debug', 'hidden');
 			host.log('warn', 'token my-private-token and key sk-or-v1-0123456789abcdef0123');
 			assert.deepStrictEqual(lines, ['[warn] token *** and key ***']);

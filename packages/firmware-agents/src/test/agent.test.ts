@@ -70,7 +70,7 @@ suite('Agent (ReAct loop)', () => {
 		const llm = new ScriptedFakeLlm([callTool('c1', 'flash', { elf: 'app.elf' }), say('OK, not flashing.')]);
 		const result = await new TestAgent(llm, setup(), host).run('Flash it');
 
-		assert.deepStrictEqual(host.approvals, [{ agentId: 'test', toolName: 'flash', risk: 'hardware', summary: 'Flash app.elf', input: { elf: 'app.elf' } }]);
+		assert.deepStrictEqual(host.approvals, [{ agentId: 'test', toolName: 'flash', risk: 'hardware', category: 'hardware', summary: 'Flash app.elf', input: { elf: 'app.elf' } }]);
 		const toolMessage = result.messages[2];
 		assert.ok(toolMessage.role === 'tool' && toolMessage.content.includes('declined'));
 	});

@@ -17,6 +17,8 @@ import { detectProject, joinPath, ProjectInfo } from '../../embedded/project';
 import { ITargetCatalog } from '../../embedded/target';
 import { detectPackageManager, installCommand, InstallableTool, isInstallable, packagesFor, probeToolchain, ToolPurpose } from '../../embedded/toolchain';
 import { ChangeTracker, isSecretPath, normalizeWorkspacePath } from '../tools/fileTools';
+import { ExecutableDependency } from '../../install/dependencies';
+import { DependencyResolver } from '../../install/resolver';
 
 /** Shared state of one Dev agent's tools: project cache and the build/edit timeline. */
 export class DevToolContext {
@@ -119,9 +121,34 @@ export function createDevTools(ctx: DevToolContext): AnyTool[] {
 		}),
 
 		defineTool({
-			name: 'install_tools',
-			description: 'Install missing tools with the system package manager (non-interactive; needs passwordless sudo on Linux, otherwise returns the command for the user to run). Only the listed tool names are accepted.',
+			name: 'install_toolchain',
+			description: 'Download the pinned, checksum-verified Arm GNU toolchain (arm-none-eabi-gcc, size, objcopy, gdb; about 300 MB) and/or OpenOCD (about 3 MB) into the user\'s tool store. Needs no root; prefer this over install_tools.',
 			risk: 'write',
+			category: 'install',
+			inputSchema: {
+				type: 'object',
+				properties: { components: { type: 'array', items: { enum: ['arm-toolchain', 'openocd'] }, maxItems: 2 } },
+				required: ['components'],
+				additionalProperties: false,
+			},
+			describeCall: (input: { components: string[] }) => `Download into the tool store if missing: ${input.components.map(c => c === 'openocd' ? 'xPack OpenOCD 0.12.0-7 (3 MB)' : 'xPack Arm GNU toolchain 15.2.1 (307 MB)').join('; ')}`,
+			invoke: async (input: { components: string[] }, { host, signal }) => {
+				if (!host.toolStore) {
+					throw new ToolError('This host has no tool store; use install_tools (system package manager) instead.');
+				}
+				const deps = [...new Set(input.components)].map(c => c === 'openocd'
+					? new ExecutableDependency({ id: 'openocd', label: 'OpenOCD', commands: ['openocd'], archive: 'xpack-openocd', manualHint: 'Install OpenOCD.' })
+					: new ExecutableDependency({ id: 'arm-toolchain', label: 'Arm GNU toolchain', commands: ['arm-none-eabi-gcc'], archive: 'xpack-arm-none-eabi-gcc', manualHint: 'Install the Arm GNU toolchain.' }));
+				const report = await new DependencyResolver(host).ensureUserSpace(deps, signal);
+				return { ...report, next: report.ok ? 'Installed; run check_toolchain again.' : 'Some components could not be installed; fall back to install_tools or tell the user.' };
+			},
+		}),
+
+		defineTool({
+			name: 'install_tools',
+			description: 'Install missing tools with the system package manager (non-interactive; needs passwordless sudo on Linux, otherwise returns the command for the user to run). Only the listed tool names are accepted. For the Arm toolchain and OpenOCD prefer install_toolchain (no root).',
+			risk: 'write',
+			category: 'system',
 			inputSchema: {
 				type: 'object',
 				properties: { tools: { type: 'array', items: { enum: ['gcc', 'size', 'objcopy', 'gdb', 'openocd', 'cmake', 'make', 'ninja', 'st-flash'] }, maxItems: 9 } },
@@ -156,6 +183,7 @@ export function createDevTools(ctx: DevToolContext): AnyTool[] {
 			name: 'configure',
 			description: 'Configure the build (CMake: generate build/; ESP-IDF: reconfigure). Build does this automatically when needed; use it to change the build type.',
 			risk: 'write',
+			category: 'build',
 			inputSchema: { type: 'object', properties: { dir: dirProp, buildType: { enum: [...BUILD_TYPES] } }, additionalProperties: false },
 			describeCall: (input: { dir?: string; buildType?: BuildType }) => `Configure the build in ${input.dir ?? '.'}${input.buildType ? ` (${input.buildType})` : ''}`,
 			invoke: async (input: { dir?: string; buildType?: BuildType }, { host, signal }) => {
@@ -168,6 +196,7 @@ export function createDevTools(ctx: DevToolContext): AnyTool[] {
 			name: 'build',
 			description: 'Build the firmware. Returns success, structured compiler/linker diagnostics (file, line, severity, message), and the produced artifacts (ELF, map, bin, hex, lib).',
 			risk: 'write',
+			category: 'build',
 			inputSchema: {
 				type: 'object',
 				properties: { dir: dirProp, buildType: { enum: [...BUILD_TYPES] }, environment: { type: 'string', maxLength: 64, description: 'PlatformIO environment' } },
@@ -192,6 +221,7 @@ export function createDevTools(ctx: DevToolContext): AnyTool[] {
 			name: 'clean',
 			description: 'Delete build outputs (the build system\'s clean target).',
 			risk: 'write',
+			category: 'build',
 			inputSchema: { type: 'object', properties: { dir: dirProp }, additionalProperties: false },
 			describeCall: (input: { dir?: string }) => `Clean the build in ${input.dir ?? '.'}`,
 			invoke: async (input: { dir?: string }, { host, signal }) => {

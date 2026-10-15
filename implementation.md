@@ -5,7 +5,7 @@ Per-requirement context, scope, files, and verification. Task status lives in
 
 ---
 
-## REQ-7 — Firmware Agents: Dev · Debug · Test (2026-10-15, in progress — P0 + P1 done)
+## REQ-7 — Firmware Agents: Dev · Debug · Test (2026-10-15, in progress — P0 + P1 + debug self-install done)
 
 **Context.** Three cooperating AI agents for STM32 / ESP32 firmware (with or without FreeRTOS):
 a **Dev** agent (toolchain setup, build, flash, apply change requests), a **Debug** agent
@@ -61,7 +61,21 @@ Deferred, with the phase that closes each: OpenOCD helper scripts pulled in by `
 could resolve in the project folder (P2a: absolute script paths); `objcopy -O binary` on RAM-placed
 load sections can yield a huge `.bin` (P2a); CMake executables without `.elf` are not found
 (on demand); `CMakePresets.json` builds get a separate tree (P4); Fedora's multi-arch `gdb` is not
-accepted as the ARM debugger (P2a). P0 deferrals: see `requirements_docs/roboagent_req_firmware_agents.md` §9a. Host still lacks `openocd`, `gdb-multiarch`, `ninja`, ESP-IDF toolchain.
+accepted as the ARM debugger (P2a). P0 deferrals: see `requirements_docs/roboagent_req_firmware_agents.md` §9a.
+
+**Debug self-install delivered (2026-10-15, R7.10, task 7.5a).** `src/install/` + `NodeToolStore` +
+`src/agents/debug/setupTools.ts`. Checks and installs what on-chip debugging needs: OpenOCD (xPack;
+Espressif's fork for ESP32, used by absolute path), the target's GDB (xPack Arm GCC → arm-none-eabi-gdb;
+Espressif Xtensa/RISC-V GDB), probe udev rules (ST-Link, ESP USB-JTAG, ESP-PROG, CMSIS-DAP, J-Link) and
+the ESP32 serial group. User-space installs: pinned versions + vendor SHA-256, https + host allowlist
+(final URL checked), exact size, listing + symlink checks, atomic rename, locked index with derived
+paths, store refused inside the workspace. Root steps (separate approval, category `system`): rules
+content hash-pinned, scanned for RUN/PROGRAM/IMPORT and written via `sudo -n tee` over stdin into our
+own `60-roboagent-openocd.rules`; absolute program paths; `pkexec` only when the host allows it,
+otherwise one exact command for the user. Verified with real vendor downloads on this machine. Not
+verifiable here: the root step for real (sudo needs a password) and anything needing a probe/board.
+Deferred: HTTPS_PROXY support, manifest refresh script, ESP-IDF tools under `~/.espressif` not on PATH
+(P2b), Windows driver checks. Host still lacks `openocd`, `gdb-multiarch`, `ninja`, ESP-IDF toolchain.
 
 ---
 

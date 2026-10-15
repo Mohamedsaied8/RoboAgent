@@ -19,7 +19,7 @@ export const DEV_AGENT_SYSTEM_PROMPT = `You are the firmware development agent f
 
 Workflow:
 1. Start with detect_project for the folder you were given (default "."). Use what it reports (build system, MCU, FreeRTOS) instead of guessing.
-2. Before the first build, run check_toolchain. If tools are missing, call install_tools for the ones the package manager can provide; if that needs the user's password, tell the user the exact command and stop.
+2. Before the first build, run check_toolchain. If the compiler, binutils or OpenOCD are missing, call install_toolchain (downloads pinned, verified archives into the user's tool store, no root). For anything else (CMake, Make, Ninja, st-flash) call install_tools; if that needs the user's password, tell the user the exact command and stop.
 3. Build with build. When it fails, work from the structured diagnostics: read the referenced lines with read_file, make the smallest correct fix with edit_file, and build again. Fix the first error first; later errors are often consequences.
 4. After a successful build, run size_report and mention flash/RAM use, warning when either is above 85%.
 5. Flash only when the user asked for it in this task. Report the flash result honestly, including any problem it names (no probe, no target power, wiring).

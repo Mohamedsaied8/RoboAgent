@@ -61,14 +61,14 @@ export type ExecHandler = (command: string, args: readonly string[], options: Ex
 export class FakeHost implements IAgentHost {
 	readonly fs = new MemoryFileSystem();
 	readonly approvals: ApprovalRequest[] = [];
-	readonly commands: { command: string; args: readonly string[]; cwd?: string }[] = [];
+	readonly commands: { command: string; args: readonly string[]; cwd?: string; noToolStorePath?: boolean }[] = [];
 	readonly logs: { level: LogLevel; message: string }[] = [];
 	onExec: ExecHandler = () => undefined;
 
 	constructor(private readonly approveAll = true) { }
 
 	async exec(command: string, args: readonly string[], options: ExecOptions = {}): Promise<ExecResult> {
-		this.commands.push({ command, args, ...options.cwd ? { cwd: options.cwd } : {} });
+		this.commands.push({ command, args, ...options.cwd ? { cwd: options.cwd } : {}, ...options.noToolStorePath ? { noToolStorePath: true } : {} });
 		const scripted = this.onExec(command, args, options);
 		const result: ExecResult = { exitCode: 0, stdout: '', stderr: '', timedOut: false, cancelled: false, truncated: false, ...scripted };
 		if (scripted?.stdout) {
