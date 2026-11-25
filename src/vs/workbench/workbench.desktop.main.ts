@@ -188,7 +188,8 @@ import './contrib/encryption/electron-browser/encryption.contribution.js';
 import './contrib/emergencyAlert/electron-browser/emergencyAlert.contribution.js';
 
 // Agents App Merged Banner
-import './contrib/agentsAppMergedBanner/browser/agentsAppMergedBanner.contribution.js';
+// RoboAgent: no "Agents app is deprecated" banner — RoboAgent never shipped a separate Agents app.
+// import './contrib/agentsAppMergedBanner/browser/agentsAppMergedBanner.contribution.js';
 
 // MCP
 import './contrib/mcp/electron-browser/mcp.contribution.js';
