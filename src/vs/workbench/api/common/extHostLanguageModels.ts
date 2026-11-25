@@ -370,7 +370,8 @@ export class ExtHostLanguageModels implements ExtHostLanguageModelsShape {
 		}
 
 		for (const [modelIdentifier, modelData] of this._localModels) {
-			if (modelData.metadata.isDefaultForLocation[ChatAgentLocation.Chat] && modelData.metadata.vendor === 'copilot') {
+			// RoboAgent: the built-in RoboAgent AI model is a default vendor alongside Copilot.
+			if (modelData.metadata.isDefaultForLocation[ChatAgentLocation.Chat] && (modelData.metadata.vendor === 'copilot' || modelData.metadata.vendor === 'roboagent')) {
 				defaultModelId = modelIdentifier;
 				break;
 			}

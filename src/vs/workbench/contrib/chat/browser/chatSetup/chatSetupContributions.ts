@@ -363,16 +363,7 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 				super({
 					id: 'workbench.action.chat.triggerSetupFromAccounts',
 					title: localize2('triggerChatSetupFromAccounts', "Sign in to use AI features..."),
-					menu: {
-						id: MenuId.AccountsContext,
-						group: '2_copilot',
-						when: ContextKeyExpr.and(
-							ChatContextKeys.Setup.hidden.negate(),
-							ChatContextKeys.Setup.disabledInWorkspace.negate(),
-							ChatContextKeys.Setup.completed.negate(),
-							ChatContextKeys.Entitlement.signedOut
-						)
-					}
+					// RoboAgent: no Accounts-menu entry; AI features use the RoboAgent account.
 				});
 			}
 
@@ -398,12 +389,11 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 					menu: [{
 						id: MenuId.TitleBarAdjacentCenter,
 						order: 0, // same position as the update button
+						// RoboAgent: the button signs in to the Robotics Corner account (same as the
+						// status-bar entry), so it follows that session rather than the Copilot entitlement.
 						when: ContextKeyExpr.and(
 							IsWebContext.negate(),
-
-							ChatContextKeys.Entitlement.signedOut,
-							ChatContextKeys.Setup.hidden.negate(),
-							ChatContextKeys.Setup.disabledInWorkspace.negate(),
+							ContextKeyExpr.equals('roboagentIsSignedIn', false),
 							ContextKeyExpr.has('updateTitleBar').negate(),
 							InEditorZenModeContext.negate(),
 						),
@@ -415,9 +405,9 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
 				const commandService = accessor.get(ICommandService);
 				const telemetryService = accessor.get(ITelemetryService);
 
-				telemetryService.publicLog2<WorkbenchActionExecutedEvent, WorkbenchActionExecutedClassification>('workbenchActionExecuted', { id: CHAT_SETUP_ACTION_ID, from: 'titlebar' });
+				telemetryService.publicLog2<WorkbenchActionExecutedEvent, WorkbenchActionExecutedClassification>('workbenchActionExecuted', { id: 'roboagent.signIn', from: 'titlebar' });
 
-				return commandService.executeCommand(CHAT_SETUP_ACTION_ID);
+				return commandService.executeCommand('roboagent.signIn');
 			}
 		}
 

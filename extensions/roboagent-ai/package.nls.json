@@ -1,0 +1,6 @@
+{
+	"displayName": "RoboAgent AI",
+	"description": "The RoboAgent AI assistant in the Chat panel, powered by the Robotics Corner model and your RoboAgent account.",
+	"participant.description": "Ask RoboAgent about your robotics code",
+	"config.endpoint": "The RoboAgent AI chat endpoint (Vercel AI SDK UI-message stream). Requests carry your RoboAgent account token as `Authorization: Bearer`."
+}

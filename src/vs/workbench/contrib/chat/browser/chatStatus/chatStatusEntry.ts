@@ -84,7 +84,10 @@ export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribu
 
 	private update(): void {
 		const sentiment = this.chatEntitlementService.sentiment;
-		if (!sentiment.hidden) {
+		// RoboAgent: this entry is the GitHub Copilot sign-in / quota indicator. RoboAgent AI runs on the
+		// RoboAgent account (its own status-bar entry), so it only shows for a Copilot that is actually signed in.
+		const copilotSignedIn = this.chatEntitlementService.entitlement !== ChatEntitlement.Unknown && !this.chatEntitlementService.anonymous;
+		if (!sentiment.hidden && copilotSignedIn) {
 			const props = this.getEntryProps();
 			if (this.entry) {
 				this.entry.update(props);

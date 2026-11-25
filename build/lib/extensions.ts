@@ -318,6 +318,9 @@ const nativeExtensions = [
 
 const excludedExtensions = [
 	'copilot',
+	// RoboAgent: superseded by the workbench's `roboagent` authentication provider
+	// (contrib/roboagent/browser/roboagentAuthenticationProvider.ts), which owns the same id.
+	'roboagent-authentication',
 	'vscode-api-tests',
 	'vscode-colorize-tests',
 	'vscode-colorize-perf-tests',

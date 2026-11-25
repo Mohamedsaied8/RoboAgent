@@ -26,6 +26,7 @@ import { Ros2PackageExplorerView } from './ros2PackageExplorerView.js';
 import { Ros2StatusBar } from './ros2StatusBar.js';
 import { IndexRos2WorkspaceAction, registerRoboAgentActions } from './ros2WorkspaceActions.js';
 import { RoboAgentAuthStatusBar } from './roboagentAuthStatusBar.js';
+import { RoboAgentAuthenticationProviderContribution } from './roboagentAuthenticationProvider.js';
 import { RoboAgentModeToolbarContribution } from './roboagentModeToolbar.js';
 import { registerAuthActions, SignInAction, SignUpAction } from './roboagentAuthCommands.js';
 // --- Service ---------------------------------------------------------------
@@ -129,6 +130,10 @@ registerWorkbenchContribution2(Ros2StatusBar.ID, Ros2StatusBar, WorkbenchPhase.A
 // --- Auth status bar -------------------------------------------------------
 
 registerWorkbenchContribution2(RoboAgentAuthStatusBar.ID, RoboAgentAuthStatusBar, WorkbenchPhase.AfterRestored);
+
+// --- `roboagent` authentication provider (the account's token for extensions, e.g. AI chat) ---
+
+registerWorkbenchContribution2(RoboAgentAuthenticationProviderContribution.ID, RoboAgentAuthenticationProviderContribution, WorkbenchPhase.BlockRestore);
 
 // --- Mode | Create | Build | Debug title-bar toolbar ------------------------
 

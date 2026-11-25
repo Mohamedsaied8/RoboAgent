@@ -342,12 +342,10 @@ configurationRegistry.registerConfiguration({
 		'workbench.welcomePage.experimentalOnboarding': {
 			scope: ConfigurationScope.APPLICATION,
 			type: 'boolean',
-			default: true,
+			// RoboAgent: off — its first step is GitHub / Google / Apple sign-in for Copilot.
+			default: false,
 			tags: ['experimental'],
 			description: localize('workbench.welcomePage.experimentalOnboarding', "When enabled, show the new onboarding experience instead of the classic walkthrough on first launch."),
-			experiment: {
-				mode: 'auto'
-			}
 		}
 	}
 });

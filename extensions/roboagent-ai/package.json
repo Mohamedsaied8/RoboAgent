@@ -1,0 +1,71 @@
+{
+	"name": "roboagent-ai",
+	"displayName": "%displayName%",
+	"description": "%description%",
+	"version": "1.0.0",
+	"publisher": "roboagent",
+	"license": "MIT",
+	"engines": {
+		"vscode": "^1.120.1"
+	},
+	"categories": [
+		"AI",
+		"Chat"
+	],
+	"main": "./out/extension",
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"enabledApiProposals": [
+		"defaultChatParticipant",
+		"chatParticipantAdditions",
+		"chatProvider"
+	],
+	"capabilities": {
+		"untrustedWorkspaces": {
+			"supported": true
+		},
+		"virtualWorkspaces": true
+	},
+	"scripts": {
+		"compile": "gulp compile-extension:roboagent-ai",
+		"watch": "gulp watch-extension:roboagent-ai",
+		"test-unit": "node ../../node_modules/typescript/bin/tsc -p ./tsconfig.json && node ../../node_modules/mocha/bin/mocha --ui tdd --timeout 20000 \"out/test/**/*.test.js\""
+	},
+	"contributes": {
+		"chatParticipants": [
+			{
+				"id": "roboagent.default",
+				"name": "RoboAgent",
+				"fullName": "RoboAgent",
+				"description": "%participant.description%",
+				"isDefault": true,
+				"locations": [
+					"panel"
+				],
+				"modes": [
+					"ask",
+					"edit",
+					"agent"
+				]
+			}
+		],
+		"languageModelChatProviders": [
+			{
+				"vendor": "roboagent",
+				"displayName": "RoboAgent"
+			}
+		],
+		"configuration": {
+			"title": "RoboAgent AI",
+			"properties": {
+				"roboagent.ai.endpoint": {
+					"type": "string",
+					"default": "https://www.roboticscorner.tech/roboagent/api/chat",
+					"description": "%config.endpoint%",
+					"scope": "application"
+				}
+			}
+		}
+	}
+}

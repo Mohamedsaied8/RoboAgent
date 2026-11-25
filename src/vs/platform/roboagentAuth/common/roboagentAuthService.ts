@@ -37,4 +37,11 @@ export interface IRoboAgentAuthMainService {
 	 * Get the current derived session state. Does not include access/refresh tokens.
 	 */
 	getSession(): Promise<IRoboAgentAuthSession>;
+
+	/**
+	 * A valid access token for the signed-in account (refreshed first when it is about to expire),
+	 * for calling RoboAgent services such as the AI chat gateway. Undefined when signed out or when
+	 * no token can be obtained.
+	 */
+	getAccessToken(): Promise<string | undefined>;
 }

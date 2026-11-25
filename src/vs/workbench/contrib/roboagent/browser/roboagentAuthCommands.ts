@@ -3,7 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { localize2 } from '../../../../nls.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
@@ -22,7 +23,8 @@ export class SignInAction extends Action2 {
 			id: SignInAction.ID,
 			title: localize2('roboagent.signInTitle', "Log In to RoboAgent"),
 			category: localize2('roboagent.category', "RoboAgent"),
-			f1: true
+			f1: true,
+			menu: { id: MenuId.AccountsContext, group: '1_roboagent', order: 1, when: ContextKeyExpr.equals('roboagentIsSignedIn', false) }
 		});
 	}
 
@@ -52,9 +54,10 @@ export class SignInAction extends Action2 {
 		try {
 			await authService.signIn();
 			notificationService.info('Successfully signed in to RoboAgent!');
-		} catch (e: any) {
-			if (e.message !== 'Sign in aborted') {
-				notificationService.error(`Sign in failed: ${e.message}`);
+		} catch (e) {
+			const message = e instanceof Error ? e.message : String(e);
+			if (message !== 'Sign in aborted') {
+				notificationService.error(`Sign in failed: ${message}`);
 			}
 		}
 	}
@@ -98,9 +101,10 @@ export class SignUpAction extends Action2 {
 		try {
 			await authService.signIn();
 			notificationService.info('Successfully signed in to RoboAgent!');
-		} catch (e: any) {
-			if (e.message !== 'Sign in aborted') {
-				notificationService.error(`Sign up failed: ${e.message}`);
+		} catch (e) {
+			const message = e instanceof Error ? e.message : String(e);
+			if (message !== 'Sign in aborted') {
+				notificationService.error(`Sign up failed: ${message}`);
 			}
 		}
 	}
@@ -114,7 +118,8 @@ export class SignOutAction extends Action2 {
 			id: SignOutAction.ID,
 			title: localize2('roboagent.signOutTitle', "Sign Out of RoboAgent"),
 			category: localize2('roboagent.category', "RoboAgent"),
-			f1: true
+			f1: true,
+			menu: { id: MenuId.AccountsContext, group: '1_roboagent', order: 3, when: ContextKeyExpr.equals('roboagentIsSignedIn', true) }
 		});
 	}
 
@@ -133,8 +138,8 @@ export class SignOutAction extends Action2 {
 		try {
 			await authService.signOut();
 			notificationService.info('Successfully signed out of RoboAgent (your browser session is unaffected).');
-		} catch (e: any) {
-			notificationService.error(`Sign out failed: ${e.message}`);
+		} catch (e) {
+			notificationService.error(`Sign out failed: ${e instanceof Error ? e.message : String(e)}`);
 		}
 	}
 }
@@ -147,7 +152,8 @@ export class OpenDashboardAction extends Action2 {
 			id: OpenDashboardAction.ID,
 			title: localize2('roboagent.openDashboardTitle', "Go to RoboAgent Dashboard"),
 			category: localize2('roboagent.category', "RoboAgent"),
-			f1: true
+			f1: true,
+			menu: { id: MenuId.AccountsContext, group: '1_roboagent', order: 2, when: ContextKeyExpr.equals('roboagentIsSignedIn', true) }
 		});
 	}
 

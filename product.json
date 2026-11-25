@@ -224,6 +224,9 @@
 		"mcpRegistryDataUrl": "https://api.github.com/copilot/mcp_registry"
 	},
 	"trustedExtensionAuthAccess": {
+		"roboagent": [
+			"roboagent.roboagent-ai"
+		],
 		"github": [
 			"GitHub.copilot-chat"
 		],
@@ -306,7 +309,5 @@
 			"type": "light"
 		}
 	],
-	"builtInExtensionsEnabledWithAutoUpdates": [
-		"GitHub.copilot-chat"
-	]
+	"builtInExtensionsEnabledWithAutoUpdates": []
 }
