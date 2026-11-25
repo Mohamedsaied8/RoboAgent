@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ApprovalRequest, DirEntry, ExecOptions, ExecResult, IAgentHost, IFileSystem, IProcessHandle, ISystemProbe, LogLevel, ProgramSearchOptions, SpawnOptions, UdevRuleFile } from '../kernel/host';
+import { ApprovalRequest, DirEntry, ExecOptions, ExecResult, IAgentHost, IFileSystem, IProcessHandle, ISerialPorts, ISystemProbe, LogLevel, ProgramSearchOptions, SpawnOptions, UdevRuleFile } from '../kernel/host';
 
 /** System probe for tests: programs and udev folders as configured, nothing real. */
 export class FakeSystemProbe implements ISystemProbe {
@@ -38,9 +38,22 @@ export class MemoryFileSystem implements IFileSystem {
 	async writeFile(path: string, content: string): Promise<void> {
 		this.files.set(normalize(path), content);
 	}
+	/** Binary files, kept apart from the text ones. */
+	readonly binaries = new Map<string, Uint8Array>();
+	async readBytes(path: string): Promise<Uint8Array> {
+		const data = this.binaries.get(normalize(path)) ?? this.binaries.get(await this.realPath(path));
+		if (data === undefined) {
+			const text = await this.readFile(path);
+			return new TextEncoder().encode(text);
+		}
+		return data;
+	}
+	async writeBytes(path: string, data: Uint8Array): Promise<void> {
+		this.binaries.set(normalize(path), data);
+	}
 	async exists(path: string): Promise<boolean> {
 		const p = normalize(path);
-		return this.files.has(p) || [...this.files.keys()].some(f => p === '' || f.startsWith(`${p}/`));
+		return this.files.has(p) || this.binaries.has(p) || [...this.files.keys(), ...this.binaries.keys()].some(f => p === '' || f.startsWith(`${p}/`));
 	}
 	/** Symlinks for tests: link path → target path (workspace-relative). */
 	readonly links = new Map<string, string>();
@@ -83,6 +96,7 @@ export class FakeHost implements IAgentHost {
 	readonly logs: { level: LogLevel; message: string }[] = [];
 	onExec: ExecHandler = () => undefined;
 	system?: FakeSystemProbe;
+	serial?: ISerialPorts;
 	readonly spawned: { command: string; args: readonly string[]; options: SpawnOptions }[] = [];
 	/** Scripts long-lived programs; without it, `spawn` fails like a missing program. */
 	onSpawn?: (command: string, args: readonly string[], options: SpawnOptions) => IProcessHandle;

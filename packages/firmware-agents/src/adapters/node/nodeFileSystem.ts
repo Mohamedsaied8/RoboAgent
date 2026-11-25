@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { DirEntry, IFileSystem } from '../../kernel/host';
@@ -99,10 +100,44 @@ export class NodeFileSystem implements IFileSystem {
 	}
 
 	async writeFile(p: string, content: string): Promise<void> {
+		await this.writeBytes(p, Buffer.from(content, 'utf8'));
+	}
+
+	/** Reads regular files only, up to the same size cap as {@link readFile}. */
+	async readBytes(p: string): Promise<Uint8Array> {
+		const target = await resolveInside(this.root, p);
+		const stat = await fs.stat(target);
+		if (!stat.isFile()) {
+			throw new Error(`"${p}" is not a regular file`);
+		}
+		if (stat.size > this.maxReadBytes) {
+			throw new Error(`"${p}" is ${stat.size} bytes; the limit is ${this.maxReadBytes}`);
+		}
+		return new Uint8Array(await fs.readFile(target));
+	}
+
+	async sha256(p: string): Promise<string> {
+		const target = await resolveInside(this.root, p);
+		if (!(await fs.stat(target)).isFile()) {
+			throw new Error(`"${p}" is not a regular file`);
+		}
+		const hash = createHash('sha256');
+		const handle = await fs.open(target, 'r');
+		try {
+			for await (const chunk of handle.createReadStream({ highWaterMark: 1 << 20 })) {
+				hash.update(chunk as Buffer);
+			}
+		} finally {
+			await handle.close().catch(() => undefined);
+		}
+		return hash.digest('hex');
+	}
+
+	async writeBytes(p: string, data: Uint8Array): Promise<void> {
 		const target = await resolveInside(this.root, p);
 		await fs.mkdir(path.dirname(target), { recursive: true });
 		await resolveInside(this.root, p); // re-check after creating folders
-		await fs.writeFile(target, content, 'utf8');
+		await fs.writeFile(target, data);
 	}
 
 	async exists(p: string): Promise<boolean> {

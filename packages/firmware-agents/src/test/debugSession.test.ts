@@ -8,7 +8,7 @@ import { budgetFromControlRegisters, decodeCortexMFault, stackFromExcReturn } fr
 import { GdbMiClient, MiError } from '../embedded/debug/gdbmi/client';
 import { miQuote, parseMiLine } from '../embedded/debug/gdbmi/parser';
 import { acquireProbe, OpenOcdServer, ProbeBusyError } from '../embedded/debug/openocdServer';
-import { bitBandTarget, checkExpression, checkLocation, DebugSessionError, OpenOcdGdbSession } from '../embedded/debug/targetSession';
+import { bitBandTarget, checkExpression, checkLocation, CortexCrashDecode, DebugSessionError, OpenOcdGdbSession } from '../embedded/debug/targetSession';
 import { parseSvd } from '../embedded/svd/svdParser';
 import { DefaultTargetCatalog } from '../embedded/target';
 import { fakeOpenOcd, loadTranscript, openocdStartupLines, scriptedGdb, TranscriptGdb } from './fakeDebug';
@@ -248,7 +248,7 @@ suite('Recorded session replay (STM32F103C8T6 Blue Pill + ST-Link V2)', function
 		assert.deepStrictEqual([host.spawned[0].options.trustedCwd, host.spawned[0].options.unsetEnv], ['/tools/openocd/scripts', ['OPENOCD_SCRIPTS']]);
 		assert.deepStrictEqual(host.spawned[1].args, ['--interpreter=mi3', '-nx', '-q', '-iex', 'set auto-load off', '-iex', 'set history save off', '-iex', 'set debuginfod enabled off']);
 		assert.deepStrictEqual([s.server, s.budget, s.state, s.lastStop], [
-			{ probe: 'STLINK V2J48S7 (API v2) VID:PID 0483:3748', targetVoltage: 3.280645, core: 'Cortex-M3 r1p1', budget: { breakpoints: 6, watchpoints: 4 }, port: 46273 },
+			{ transport: 'openocd', probe: 'STLINK V2J48S7 (API v2) VID:PID 0483:3748', targetVoltage: 3.280645, core: 'Cortex-M3 r1p1', port: 46273 },
 			{ breakpoints: 6, watchpoints: 4 }, 'stopped', { pc: '0x08000024', function: 'delay', file: 'Src/main.c', line: 46 },
 		]);
 
@@ -297,7 +297,7 @@ suite('Recorded session replay (STM32F103C8T6 Blue Pill + ST-Link V2)', function
 		assert.strictEqual(s.state, 'running');
 		await assert.rejects(s.readMemory(0x20000000, 4), /running; halt it/);
 		assert.strictEqual((await s.halt()).function, 'HardFault_Handler');
-		const crash = await s.decodeCrash();
+		const crash = await s.decodeCrash() as CortexCrashDecode;
 		assert.deepStrictEqual([crash.currentException, crash.faultAddress, crash.faultingCode, crash.caller], ['HardFault', { register: 'BFAR', address: '0x60000000' },
 			{ address: '0x08000048', function: 'read_sensor_bus', file: 'Src/main.c', line: 57 },
 			{ address: '0x0800008C', function: 'main', file: 'Src/main.c', line: 70 }]);
@@ -417,7 +417,7 @@ suite('Debug session bookkeeping (scripted GDB)', function () {
 			}
 			return c.startsWith('-stack-list-frames') ? 'TOKEN^done,stack=[]' : undefined;
 		}, 'stlink-o0');
-		const crash = await s.decodeCrash();
+		const crash = await s.decodeCrash() as CortexCrashDecode;
 		assert.ok(read.includes('-data-read-memory-bytes 0x20004FD0 32'), read.join('; '));
 		assert.deepStrictEqual([crash.stackedFrame?.pc, crash.stackedFrame?.lr, crash.faultingCode?.function], ['0x08000048', '0x0800008D', 'read_sensor_bus']);
 		assert.doesNotMatch(crash.summary, /Thumb bit/);

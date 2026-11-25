@@ -5,7 +5,8 @@
 
 import { readFileSync } from 'fs';
 import * as path from 'path';
-import { IProcessHandle, ProcessExit, SpawnOptions } from '../kernel/host';
+import { toDisposable } from '../kernel/disposable';
+import { IProcessHandle, ISerialConnection, ISerialPorts, ProcessExit, SerialPortInfo, SpawnOptions } from '../kernel/host';
 
 /** A scripted long-lived process: tests push its output and see what was written to it. */
 export class FakeProcess implements IProcessHandle {
@@ -102,7 +103,8 @@ export function loadTranscript(name: string): Exchange[] {
 
 /** Normalises what may differ between the recording and a replay (the OS-assigned port). */
 function normalize(command: string): string {
-	return command.replace(/^-target-select remote 127\.0\.0\.1:\d+$/, '-target-select remote 127.0.0.1:PORT');
+	return command.replace(/^-target-select remote 127\.0\.0\.1:\d+$/, '-target-select remote 127.0.0.1:PORT')
+		.replace(/core-\d+-\d+\.elf/, 'core-N.elf');
 }
 
 /**
@@ -156,4 +158,79 @@ export function scriptedGdb(options: SpawnOptions, respond: (command: string) =>
 				: command === '-gdb-exit' ? 'TOKEN^exit' : 'TOKEN^done';
 		setImmediate(() => p.emit('stdout', `${reply.replace(/TOKEN/g, token)}\n(gdb) \n`));
 	});
+}
+
+/**
+ * Serial ports in memory: `output(device, sent)` gives what the board prints after opening
+ * (sent = undefined) and after each write; resets are recorded.
+ */
+export class FakeSerialPorts implements ISerialPorts {
+	readonly opened: string[] = [];
+	readonly written: string[] = [];
+	readonly resets: string[] = [];
+	/** Port events in order: open, hold, release, reset, close. */
+	readonly events: string[] = [];
+	openPorts = 0;
+
+	constructor(
+		private readonly ports: SerialPortInfo[],
+		private readonly output: (device: string, sent: string | undefined) => string = () => '',
+	) { }
+
+	async list(): Promise<SerialPortInfo[]> {
+		return this.ports;
+	}
+
+	async resolve(path: string): Promise<string> {
+		const port = this.ports.find(p => p.device === path || p.alias === path);
+		if (!port) {
+			throw new Error(`"${path}" is not a serial device.`);
+		}
+		return port.device;
+	}
+
+	async open(device: string): Promise<ISerialConnection> {
+		this.opened.push(device);
+		this.events.push('open');
+		this.openPorts++;
+		const listeners = new Set<(text: string) => void>();
+		const emit = (text: string) => setTimeout(() => {
+			for (const l of [...listeners]) {
+				l(text);
+			}
+		}, 5);
+		let closed = false;
+		const first = this.output(device, undefined);
+		if (first) {
+			emit(first);
+		}
+		return {
+			device,
+			onData: listener => {
+				listeners.add(listener);
+				return toDisposable(() => listeners.delete(listener));
+			},
+			write: async text => {
+				this.written.push(text);
+				const reply = this.output(device, text);
+				if (reply) {
+					emit(reply);
+				}
+			},
+			hold: on => void this.events.push(on ? 'hold' : 'release'),
+			close: async () => {
+				this.events.push('close');
+				if (!closed) {
+					closed = true;
+					this.openPorts--;
+				}
+			},
+		};
+	}
+
+	async resetEsp32(device: string): Promise<{ ok: boolean; detail: string }> {
+		this.resets.push(device);
+		this.events.push('reset');
+		return { ok: true, detail: 'reset (fake)' };
+	}
 }

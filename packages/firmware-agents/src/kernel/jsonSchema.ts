@@ -18,6 +18,8 @@ export interface JsonSchema {
 	readonly minimum?: number;
 	readonly maximum?: number;
 	readonly maxLength?: number;
+	/** Regular expression the whole string must match (tool authors' own patterns, not model input). */
+	readonly pattern?: string;
 	readonly maxItems?: number;
 	readonly default?: unknown;
 }
@@ -140,6 +142,8 @@ export function validateJsonSchema(schema: JsonSchema, value: unknown, path = 'i
 				errors.push(`${path} must be a ${schema.type}`);
 			} else if (schema.type === 'string' && schema.maxLength !== undefined && (value as string).length > schema.maxLength) {
 				errors.push(`${path} must be at most ${schema.maxLength} characters`);
+			} else if (schema.type === 'string' && schema.pattern !== undefined && !new RegExp(schema.pattern, 'u').test(value as string)) {
+				errors.push(`${path} has characters or a form that is not allowed`);
 			}
 	}
 	return errors;

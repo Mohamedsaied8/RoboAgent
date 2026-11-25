@@ -1,0 +1,228 @@
+> 1-gdb-set mi-async on
+< =thread-group-added,id="i1"
+< =cmd-param-changed,param="auto-load gdb-scripts",value="off"
+< =cmd-param-changed,param="auto-load local-gdbinit",value="off"
+< =cmd-param-changed,param="auto-load python-scripts",value="off"
+< (gdb) 
+< 1^done
+< (gdb) 
+> 2-gdb-set confirm off
+< 2^done
+< (gdb) 
+> 3-gdb-set pagination off
+< 3^done
+< (gdb) 
+> 4-gdb-set width 0
+< 4^done
+< (gdb) 
+> 5-gdb-set print pretty off
+< 5^done
+< (gdb) 
+> 6-gdb-set print elements 64
+< 6^done
+< (gdb) 
+> 7-gdb-set mem inaccessible-by-default off
+< 7^done
+< (gdb) 
+> 8-gdb-set may-write-memory off
+< 8^done
+< (gdb) 
+> 9-gdb-set may-write-registers off
+< 9^done
+< (gdb) 
+> 10-gdb-set may-call-functions off
+< 10^done
+< (gdb) 
+> 11-file-exec-and-symbols "fw/esp32_debug.elf"
+< 11^done
+< (gdb) 
+> 12-target-select core ".roboagent/coredumps/core-1792930646464-1.elf"
+< =thread-group-started,id="i1",pid="1"
+< =thread-created,id="1",group-id="i1"
+< ~"[New process 1073412600]\n"
+< =thread-created,id="2",group-id="i1"
+< ~"[New process 1073412708]\n"
+< =thread-created,id="3",group-id="i1"
+< ~"[New process 1073412816]\n"
+< =thread-created,id="4",group-id="i1"
+< ~"[New process 1073409672]\n"
+< =thread-created,id="5",group-id="i1"
+< ~"[New process 1073410808]\n"
+< ~"[Current thread is 1 (process 1073412600)]\n"
+< 12^connected,frame={level="0",addr="0x400dc3bc",func="read_sensor_bus",args=[],file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="31",arch="xtensa"}
+< (gdb) 
+> 13-interpreter-exec console "maint info sections"
+< ~"Exec file: `/work/fw/esp32_debug.elf', file type elf32-xtensa-le.\n"
+< ~" [0]      0x400c0000->0x400c0000 at 0x00029028: .rtc.text HAS_CONTENTS\n"
+< ~" [1]      0x3ff80000->0x3ff80000 at 0x00029028: .rtc.dummy HAS_CONTENTS\n"
+< ~" [2]      0x3ff80000->0x3ff80000 at 0x00029028: .rtc.force_fast HAS_CONTENTS\n"
+< ~" [3]      0x50000000->0x50000000 at 0x00029028: .rtc_noinit HAS_CONTENTS\n"
+< ~" [4]      0x50000000->0x50000028 at 0x00029000: .rtc.force_slow ALLOC LOAD DATA HAS_CONTENTS\n"
+< ~" [5]      0x3ff82000->0x3ff82000 at 0x00029028: .rtc_fast_reserved HAS_CONTENTS\n"
+< ~" [6]      0x50001fe8->0x50002000 at 0x00029fe8: .rtc_slow_reserved ALLOC\n"
+< ~" [7]      0x40080000->0x40080404 at 0x0000e000: .iram0.vectors ALLOC LOAD READONLY CODE HAS_CONTENTS\n"
+< ~" [8]      0x40080404->0x4008ac3f at 0x0000e404: .iram0.text ALLOC LOAD READONLY CODE HAS_CONTENTS\n"
+< ~" [9]      0x3ffb0000->0x3ffb2fea at 0x0000b000: .dram0.data ALLOC LOAD DATA HAS_CONTENTS\n"
+< ~" [10]     0x3f800000->0x3f800000 at 0x00029028: .ext_ram_noinit HAS_CONTENTS\n"
+< ~" [11]     0x3ffb2fea->0x3ffb2fec at 0x0000dfea: .noinit ALLOC\n"
+< ~" [12]     0x3f800000->0x3f800000 at 0x00029028: .ext_ram.bss HAS_CONTENTS\n"
+< ~" [13]     0x3ffb2ff0->0x3ffb3d28 at 0x0000dfea: .dram0.bss ALLOC\n"
+< ~" [14]     0x3f400020->0x3f400120 at 0x00001020: .flash.appdesc ALLOC LOAD READONLY DATA HAS_CONTENTS\n"
+< ~" [15]     0x3f400120->0x3f409ba4 at 0x00001120: .flash.rodata ALLOC LOAD DATA HAS_CONTENTS\n"
+< ~" [16]     0x3f409ba4->0x3f409bb4 at 0x0000aba4: .flash.tdata ALLOC LOAD DATA HAS_CONTENTS\n"
+< ~" [17]     0x400d0020->0x400df42a at 0x00019020: .flash.text ALLOC LOAD READONLY CODE HAS_CONTENTS\n"
+< ~" [18]     0x4008ac3f->0x4008ac40 at 0x00018c3f: .iram0.text_end ALLOC\n"
+< ~" [19]     0x4008ac40->0x4008ac40 at 0x00029028: .iram0.data HAS_CONTENTS\n"
+< ~" [20]     0x4008ac40->0x4008ac40 at 0x00029028: .iram0.bss HAS_CONTENTS\n"
+< ~" [21]     0x3ffb3d28->0x3ffb3d28 at 0x00029028: .dram0.heap_start HAS_CONTENTS\n"
+< ~" [22]     0x0000->0x0004 at 0x00029028: .noload HAS_CONTENTS\n"
+< ~" [23]     0x0000->0x55f8 at 0x00029030: .debug_aranges READONLY HAS_CONTENTS\n"
+< ~" [24]     0x0000->0x10cc79 at 0x0002e628: .debug_info READONLY HAS_CONTENTS\n"
+< ~" [25]     0x0000->0x21fc1 at 0x0013b2a1: .debug_abbrev READONLY HAS_CONTENTS\n"
+< ~" [26]     0x0000->0xca64e at 0x0015d262: .debug_line READONLY HAS_CONTENTS\n"
+< ~" [27]     0x0000->0xd120 at 0x002278b0: .debug_frame READONLY HAS_CONTENTS\n"
+< ~" [28]     0x0000->0x2bfbe at 0x002349d0: .debug_str READONLY HAS_CONTENTS\n"
+< ~" [29]     0x0000->0x55b97 at 0x0026098e: .debug_loc READONLY HAS_CONTENTS\n"
+< ~" [30]     0x0000->0x6350 at 0x002b6528: .debug_ranges READONLY HAS_CONTENTS\n"
+< ~" [31]     0x0000->0x0d5a at 0x002bc878: .debug_line_str READONLY HAS_CONTENTS\n"
+< ~" [32]     0x0000->0x2afb at 0x002bd5d2: .debug_loclists READONLY HAS_CONTENTS\n"
+< ~" [33]     0x0000->0x03cf at 0x002c00cd: .debug_rnglists READONLY HAS_CONTENTS\n"
+< ~" [34]     0x0000->0x006f at 0x002c049c: .comment READONLY HAS_CONTENTS\n"
+< ~" [35]     0x0000->0x0038 at 0x002c050b: .xtensa.info READONLY HAS_CONTENTS\n"
+< ~"Core file: `/work/.roboagent/coredumps/core-1792930646464-1.elf', file type elf32-xtensa-le.\n"
+< ~" [0]      0x0000->0x0be0 at 0x000001b4: note0 HAS_CONTENTS\n"
+< ~" [1]      0x0000->0x0200 at 0x00000210: .reg/1073412600 HAS_CONTENTS\n"
+< ~" [2]      0x0000->0x0200 at 0x00000210: .reg HAS_CONTENTS\n"
+< ~" [3]      0x0000->0x0200 at 0x00000470: .reg/1073412708 HAS_CONTENTS\n"
+< ~" [4]      0x0000->0x0200 at 0x000006d0: .reg/1073412816 HAS_CONTENTS\n"
+< ~" [5]      0x0000->0x0200 at 0x00000930: .reg/1073409672 HAS_CONTENTS\n"
+< ~" [6]      0x0000->0x0200 at 0x00000b90: .reg/1073410808 HAS_CONTENTS\n"
+< ~" [7]      0x3ffaf9f8->0x3ffafa5c at 0x00000d94: load1 ALLOC LOAD HAS_CONTENTS\n"
+< ~" [8]      0x3ffb4ee0->0x3ffb50d0 at 0x00000df8: load2 ALLOC LOAD HAS_CONTENTS\n"
+< ~" [9]      0x3ffafa64->0x3ffafac8 at 0x00000fe8: load3 ALLOC LOAD HAS_CONTENTS\n"
+< ~" [10]     0x3ffb5560->0x3ffb5710 at 0x0000104c: load4 ALLOC LOAD HAS_CONTENTS\n"
+< ~" [11]     0x3ffafad0->0x3ffafb34 at 0x000011fc: load5 ALLOC LOAD HAS_CONTENTS\n"
+< ~" [12]     0x3ffb5ba0->0x3ffb5d50 at 0x00001260: load6 ALLOC LOAD HAS_CONTENTS\n"
+< ~" [13]     0x3ffaee88->0x3ffaeeec at 0x00001410: load7 ALLOC LOAD HAS_CONTENTS\n"
+< ~" [14]     0x3ffaecc0->0x3ffaee80 at 0x00001474: load8 ALLOC LOAD HAS_CONTENTS\n"
+< ~" [15]     0x3ffaf2f8->0x3ffaf35c at 0x00001634: load9 ALLOC LOAD HAS_CONTENTS\n"
+< ~" [16]     0x3ffaf130->0x3ffaf2f0 at 0x00001698: load10 ALLOC LOAD HAS_CONTENTS\n"
+< ~" [17]     0x0000->0x011c at 0x00001858: note11 HAS_CONTENTS\n"
+< 13^done
+< (gdb) 
+> 14-gdb-set mem inaccessible-by-default on
+< 14^done
+< (gdb) 
+> 15-interpreter-exec console "mem 0x3F400020 0x3F409BB4 ro"
+< 15^done
+< (gdb) 
+> 16-interpreter-exec console "mem 0x3FFAECC0 0x3FFAEE80 ro"
+< 16^done
+< (gdb) 
+> 17-interpreter-exec console "mem 0x3FFAEE88 0x3FFAEEEC ro"
+< 17^done
+< (gdb) 
+> 18-interpreter-exec console "mem 0x3FFAF130 0x3FFAF2F0 ro"
+< 18^done
+< (gdb) 
+> 19-interpreter-exec console "mem 0x3FFAF2F8 0x3FFAF35C ro"
+< 19^done
+< (gdb) 
+> 20-interpreter-exec console "mem 0x3FFAF9F8 0x3FFAFA5C ro"
+< 20^done
+< (gdb) 
+> 21-interpreter-exec console "mem 0x3FFAFA64 0x3FFAFAC8 ro"
+< 21^done
+< (gdb) 
+> 22-interpreter-exec console "mem 0x3FFAFAD0 0x3FFAFB34 ro"
+< 22^done
+< (gdb) 
+> 23-interpreter-exec console "mem 0x3FFB4EE0 0x3FFB50D0 ro"
+< 23^done
+< (gdb) 
+> 24-interpreter-exec console "mem 0x3FFB5560 0x3FFB5710 ro"
+< 24^done
+< (gdb) 
+> 25-interpreter-exec console "mem 0x3FFB5BA0 0x3FFB5D50 ro"
+< 25^done
+< (gdb) 
+> 26-interpreter-exec console "mem 0x40080000 0x4008AC3F ro"
+< 26^done
+< (gdb) 
+> 27-interpreter-exec console "mem 0x400D0020 0x400DF42A ro"
+< 27^done
+< (gdb) 
+> 28-stack-info-frame
+< 28^done,frame={level="0",addr="0x400dc3bc",func="read_sensor_bus",file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="31",arch="xtensa"}
+< (gdb) 
+> 29-thread-info
+< 29^done,threads=[{id="1",target-id="process 1073412600",frame={level="0",addr="0x400dc3bc",func="read_sensor_bus",args=[],file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="31",arch="xtensa"},state="stopped"},{id="2",target-id="process 1073412708",frame={level="0",addr="0x40084a0e",func="esp_cpu_wait_for_intr",args=[],file="/opt/esp-idf/components/esp_hw_support/cpu.c",fullname="/opt/esp-idf/components/esp_hw_support/cpu.c",line="64",arch="xtensa"},state="stopped"},{id="3",target-id="process 1073412816",frame={level="0",addr="0x40084a0e",func="esp_cpu_wait_for_intr",args=[],file="/opt/esp-idf/components/esp_hw_support/cpu.c",fullname="/opt/esp-idf/components/esp_hw_support/cpu.c",line="64",arch="xtensa"},state="stopped"},{id="4",target-id="process 1073409672",frame={level="0",addr="0x4000bff0",func="??",args=[],arch="xtensa"},state="stopped"},{id="5",target-id="process 1073410808",frame={level="0",addr="0x4000bff0",func="??",args=[],arch="xtensa"},state="stopped"}],current-thread-id="1"
+< (gdb) 
+> 30-data-evaluate-expression "((TCB_t *)1073412600)->pcTaskName"
+< 30^done,value="\"main\", '\\000' <repeats 11 times>"
+< (gdb) 
+> 31-data-evaluate-expression "((TCB_t *)1073412708)->pcTaskName"
+< 31^done,value="\"IDLE0\\000\\000\\000\\000\\000\\000\\000\\000\\000\\000\""
+< (gdb) 
+> 32-data-evaluate-expression "((TCB_t *)1073412816)->pcTaskName"
+< 32^done,value="\"IDLE1\\000\\000\\000\\000\\000\\000\\000\\000\\000\\000\""
+< (gdb) 
+> 33-data-evaluate-expression "((TCB_t *)1073409672)->pcTaskName"
+< 33^done,value="\"ipc0\", '\\000' <repeats 11 times>"
+< (gdb) 
+> 34-data-evaluate-expression "((TCB_t *)1073410808)->pcTaskName"
+< 34^done,value="\"ipc1\", '\\000' <repeats 11 times>"
+< (gdb) 
+> 35-data-evaluate-expression "$pc"
+< 35^done,value="0x400dc3bc <read_sensor_bus+8>"
+< (gdb) 
+> 36-stack-list-frames 0 15
+< 36^done,stack=[frame={level="0",addr="0x400dc3bc",func="read_sensor_bus",file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="31",arch="xtensa"},frame={level="1",addr="0x400d799b",func="run_seeded_bug",file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="67",arch="xtensa"},frame={level="2",addr="0x400d7aa8",func="app_main",file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="109",arch="xtensa"},frame={level="3",addr="0x400d4073",func="main_task",file="/opt/esp-idf/components/freertos/app_startup.c",fullname="/opt/esp-idf/components/freertos/app_startup.c",line="206",arch="xtensa"},frame={level="4",addr="0x400dd2c0",func="vPortTaskWrapper",file="/opt/esp-idf/components/freertos/FreeRTOS-Kernel/portable/xtensa/port.c",fullname="/opt/esp-idf/components/freertos/FreeRTOS-Kernel/portable/xtensa/port.c",line="147",arch="xtensa"}]
+< (gdb) 
+> 37-interpreter-exec console "x/i 0x400DC3BC"
+< ~"=> 0x400dc3bc <read_sensor_bus+8>:\tl32i.n\ta2, a8, 0\n"
+< 37^done
+< (gdb) 
+> 38-interpreter-exec console "info line *0x400DC3BC"
+< ~"Line 31 of \"/work/esp32_debug/main/main.c\" starts at address 0x400dc3b7 <read_sensor_bus+3> and ends at 0x400dc3be <read_sensor_bus+10>.\n"
+< 38^done
+< (gdb) 
+> 39-thread-info
+< 39^done,threads=[{id="1",target-id="process 1073412600",frame={level="0",addr="0x400dc3bc",func="read_sensor_bus",args=[],file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="31",arch="xtensa"},state="stopped"},{id="2",target-id="process 1073412708",frame={level="0",addr="0x40084a0e",func="esp_cpu_wait_for_intr",args=[],file="/opt/esp-idf/components/esp_hw_support/cpu.c",fullname="/opt/esp-idf/components/esp_hw_support/cpu.c",line="64",arch="xtensa"},state="stopped"},{id="3",target-id="process 1073412816",frame={level="0",addr="0x40084a0e",func="esp_cpu_wait_for_intr",args=[],file="/opt/esp-idf/components/esp_hw_support/cpu.c",fullname="/opt/esp-idf/components/esp_hw_support/cpu.c",line="64",arch="xtensa"},state="stopped"},{id="4",target-id="process 1073409672",frame={level="0",addr="0x4000bff0",func="??",args=[],arch="xtensa"},state="stopped"},{id="5",target-id="process 1073410808",frame={level="0",addr="0x4000bff0",func="??",args=[],arch="xtensa"},state="stopped"}],current-thread-id="1"
+< (gdb) 
+> 40-data-evaluate-expression "((TCB_t *)1073412600)->pcTaskName"
+< 40^done,value="\"main\", '\\000' <repeats 11 times>"
+< (gdb) 
+> 41-data-evaluate-expression "((TCB_t *)1073412708)->pcTaskName"
+< 41^done,value="\"IDLE0\\000\\000\\000\\000\\000\\000\\000\\000\\000\\000\""
+< (gdb) 
+> 42-data-evaluate-expression "((TCB_t *)1073412816)->pcTaskName"
+< 42^done,value="\"IDLE1\\000\\000\\000\\000\\000\\000\\000\\000\\000\\000\""
+< (gdb) 
+> 43-data-evaluate-expression "((TCB_t *)1073409672)->pcTaskName"
+< 43^done,value="\"ipc0\", '\\000' <repeats 11 times>"
+< (gdb) 
+> 44-data-evaluate-expression "((TCB_t *)1073410808)->pcTaskName"
+< 44^done,value="\"ipc1\", '\\000' <repeats 11 times>"
+< (gdb) 
+> 45-data-evaluate-expression "counter"
+< 45^error,msg="Cannot access memory at address 0x3ffb3bac"
+< (gdb) 
+> 46-thread-select 2
+< 46^done,new-thread-id="2",frame={level="0",addr="0x40084a0e",func="esp_cpu_wait_for_intr",args=[],file="/opt/esp-idf/components/esp_hw_support/cpu.c",fullname="/opt/esp-idf/components/esp_hw_support/cpu.c",line="64",arch="xtensa"}
+< (gdb) 
+> 47-stack-list-frames 0 3
+< 47^done,stack=[frame={level="0",addr="0x40084a0e",func="esp_cpu_wait_for_intr",file="/opt/esp-idf/components/esp_hw_support/cpu.c",fullname="/opt/esp-idf/components/esp_hw_support/cpu.c",line="64",arch="xtensa"},frame={level="1",addr="0x400dcd1a",func="esp_vApplicationIdleHook",file="/opt/esp-idf/components/esp_system/freertos_hooks.c",fullname="/opt/esp-idf/components/esp_system/freertos_hooks.c",line="58",arch="xtensa"},frame={level="2",addr="0x400ddbbd",func="prvIdleTask",file="/opt/esp-idf/components/freertos/FreeRTOS-Kernel/tasks.c",fullname="/opt/esp-idf/components/freertos/FreeRTOS-Kernel/tasks.c",line="4350",arch="xtensa"},frame={level="3",addr="0x400dd2c0",func="vPortTaskWrapper",file="/opt/esp-idf/components/freertos/FreeRTOS-Kernel/portable/xtensa/port.c",fullname="/opt/esp-idf/components/freertos/FreeRTOS-Kernel/portable/xtensa/port.c",line="147",arch="xtensa"}]
+< (gdb) 
+> 48-gdb-exit
+< 48^exit
+< =thread-exited,id="1",group-id="i1"
+< =thread-exited,id="2",group-id="i1"
+< =thread-exited,id="3",group-id="i1"
+< =thread-exited,id="4",group-id="i1"
+< =thread-exited,id="5",group-id="i1"
+< =thread-group-exited,id="i1"
+< &"Traceback (most recent call last):\n"
+< &"  File \"/usr/lib/python3.10/threading.py\", line 1518, in _shutdown\n"
+< &"    def _shutdown():\n"
+< &"OSError: Signal 2 ignored due to race condition\n"

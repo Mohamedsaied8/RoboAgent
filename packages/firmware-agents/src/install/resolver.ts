@@ -14,6 +14,11 @@ export interface DebugRequirementsOptions {
 	readonly target?: TargetDescriptor;
 	/** Probes to grant USB access for (default: ST-Link for STM32; USB-JTAG + ESP-PROG for ESP32). */
 	readonly probes?: readonly ProbeId[];
+	/**
+	 * ESP32: `serial` debugs over the UART (ESP-IDF's GDB stub, panic logs, core dumps) and needs
+	 * only the chip's GDB and serial access; `probe` (default) adds OpenOCD and JTAG probe access.
+	 */
+	readonly transport?: 'probe' | 'serial';
 }
 
 const ARM_GDB_MANUAL = 'Install arm-none-eabi-gdb (Arm GNU Toolchain: https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads) or gdb-multiarch from the system package manager.';
@@ -27,10 +32,14 @@ export function debugRequirements(options: DebugRequirementsOptions = {}): IDepe
 	if (t?.vendor === 'esp32') {
 		const gdbArchive = t.arch === 'riscv' ? 'riscv32-esp-elf-gdb' : 'xtensa-esp-elf-gdb';
 		const gdbName = t.arch === 'riscv' ? 'riscv32-esp-elf-gdb' : `xtensa-${t.part}-elf-gdb`;
+		const gdb = new ExecutableDependency({ id: 'gdb', label: `GDB for ${t.part}`, commands: [gdbName], archive: gdbArchive, manualHint: ESP_MANUAL });
+		if (options.transport === 'serial') {
+			return [gdb, new SerialAccessDependency()];
+		}
 		return [
 			// systemPathOnly: the tool store's upstream OpenOCD would otherwise hide an ESP-IDF one on PATH.
 			new ExecutableDependency({ id: 'openocd-esp32', label: 'OpenOCD for ESP32 (Espressif)', commands: ['openocd'], versionMatch: /esp32/i, archive: 'openocd-esp32', systemPathOnly: true, manualHint: ESP_MANUAL }),
-			new ExecutableDependency({ id: 'gdb', label: `GDB for ${t.part}`, commands: [gdbName], archive: gdbArchive, manualHint: ESP_MANUAL }),
+			gdb,
 			new ProbeAccessDependency(options.probes ?? ['esp-usb-jtag', 'esp-prog']),
 			new SerialAccessDependency(),
 		];

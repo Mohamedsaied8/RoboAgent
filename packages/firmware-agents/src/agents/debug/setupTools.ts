@@ -23,6 +23,7 @@ interface TargetInput {
 	readonly part?: string;
 	readonly dir?: string;
 	readonly probes?: ProbeId[];
+	readonly transport?: 'probe' | 'serial';
 }
 
 const PROBE_IDS = Object.keys(PROBES) as ProbeId[];
@@ -33,6 +34,7 @@ const inputSchema = {
 		part: { type: 'string', maxLength: 64, description: 'MCU part or chip, e.g. STM32F103C8T6, esp32s3 (default: detected from dir)' },
 		dir: { type: 'string', maxLength: 512, description: 'Project directory to detect the target from (default ".")' },
 		probes: { type: 'array', items: { enum: PROBE_IDS }, maxItems: PROBE_IDS.length, description: 'Debug probes to set up USB access for (default by target)' },
+		transport: { enum: ['probe', 'serial'], description: 'ESP32: "serial" when debugging over the UART (GDB stub, panic logs, core dumps; needs only GDB and serial access), "probe" for JTAG (default)' },
 	},
 	additionalProperties: false,
 } as const;
@@ -54,7 +56,7 @@ export async function resolveTarget(host: IAgentHost, catalog: ITargetCatalog, i
 
 async function requirements(host: IAgentHost, catalog: ITargetCatalog, input: TargetInput): Promise<{ deps: IDependency[]; target?: TargetDescriptor }> {
 	const target = await resolveTarget(host, catalog, input);
-	return { deps: debugRequirements({ ...target ? { target } : {}, ...input.probes?.length ? { probes: input.probes } : {} }), ...target ? { target } : {} };
+	return { deps: debugRequirements({ ...target ? { target } : {}, ...input.probes?.length ? { probes: input.probes } : {}, ...input.transport ? { transport: input.transport } : {} }), ...target ? { target } : {} };
 }
 
 /**

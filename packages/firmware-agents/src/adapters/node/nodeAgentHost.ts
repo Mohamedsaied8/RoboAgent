@@ -5,10 +5,11 @@
 
 import { realpathSync } from 'fs';
 import * as path from 'path';
-import { ApprovalRequest, ExecOptions, ExecResult, IAgentHost, IFileSystem, IProcessHandle, ISystemProbe, IToolStore, LogLevel, SpawnOptions } from '../../kernel/host';
+import { ApprovalRequest, ExecOptions, ExecResult, IAgentHost, IFileSystem, IProcessHandle, ISerialPorts, ISystemProbe, IToolStore, LogLevel, SpawnOptions } from '../../kernel/host';
 import { redactSecrets } from '../../kernel/redact';
 import { isInside, NodeFileSystem } from './nodeFileSystem';
 import { runProcess, spawnProcess } from './nodeProcessRunner';
+import { NodeSerialPorts } from './nodeSerialPort';
 import { NodeSystemProbe } from './nodeSystemProbe';
 
 /** Environment variables never passed to child processes (in addition to {@link SECRET_ENV_PATTERN}). */
@@ -43,6 +44,8 @@ export interface NodeAgentHostOptions {
 	readonly autoInstallTools?: readonly string[];
 	/** System layout discovery (default: {@link NodeSystemProbe} on this machine). */
 	readonly system?: ISystemProbe;
+	/** Serial ports (default: {@link NodeSerialPorts}; `null` for none). */
+	readonly serial?: ISerialPorts | null;
 }
 
 /** `$ROBOAGENT_INSTALL_POLICY`: unset or empty → `auto`; `ask`/`auto` as given; any other value → `ask` (the safe reading of a typo). */
@@ -93,6 +96,7 @@ export class NodeAgentHost implements IAgentHost {
 	readonly toolStore?: IToolStore;
 	readonly system: ISystemProbe;
 	readonly installPolicy: 'ask' | 'auto';
+	readonly serial?: ISerialPorts;
 	private readonly childEnv: Record<string, string | undefined>;
 
 	constructor(private readonly options: NodeAgentHostOptions) {
@@ -112,6 +116,9 @@ export class NodeAgentHost implements IAgentHost {
 		});
 		this.childEnv = Object.fromEntries(Object.entries(options.env ?? process.env)
 			.filter(([name, value]) => !secretNames.has(name) && !SECRET_ENV_PATTERN.test(name) && !(value !== undefined && secretValues.has(value))));
+		if (options.serial !== null && process.platform !== 'win32') {
+			this.serial = options.serial ?? new NodeSerialPorts({ system: this.system, workspaceRoot: options.root, exec: (command, args, execOptions) => this.exec(command, args, execOptions) });
+		}
 	}
 
 	async exec(command: string, args: readonly string[], options?: ExecOptions): Promise<ExecResult> {

@@ -3,6 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { IDisposable } from './disposable';
+
 /**
  * Port to everything outside the agents: files, processes, the user, logs. RoboAgent, the CLI and
  * the MCP server each provide an implementation, which is what keeps the core host-agnostic.
@@ -23,6 +25,8 @@ export interface IAgentHost {
 	 * hosts without it cannot run debug sessions.
 	 */
 	spawn?(command: string, args: readonly string[], options?: SpawnOptions): IProcessHandle;
+	/** Serial ports (ESP32 console, panic logs, core dumps, the GDB stub). Optional. */
+	readonly serial?: ISerialPorts;
 }
 
 export interface SpawnOptions {
@@ -94,6 +98,12 @@ export interface ISystemProbe {
 export interface IFileSystem {
 	readFile(path: string): Promise<string>;
 	writeFile(path: string, content: string): Promise<void>;
+	/** Raw bytes of a regular file (ELF images, core dumps); optional, with the same confinement. */
+	readBytes?(path: string): Promise<Uint8Array>;
+	/** Writes raw bytes (creating folders); optional, with the same confinement. */
+	writeBytes?(path: string, data: Uint8Array): Promise<void>;
+	/** SHA-256 (hex) of a regular file of any size, streamed; optional, with the same confinement. */
+	sha256?(path: string): Promise<string>;
 	exists(path: string): Promise<boolean>;
 	readDir(path: string): Promise<DirEntry[]>;
 	/**
@@ -207,4 +217,43 @@ export interface IToolStore {
 	 * rules). Refuses paths that leave the install folder.
 	 */
 	readFile(id: string, version: string, relativePath: string, maxBytes?: number): Promise<string>;
+}
+
+/** A serial port the host can open. */
+export interface SerialPortInfo {
+	/** Real device path, e.g. `/dev/ttyUSB0`. */
+	readonly device: string;
+	/** Stable alias, e.g. `/dev/serial/by-id/usb-Silicon_Labs_CP2102_…-if00-port0`. */
+	readonly alias?: string;
+	/** USB bridge or board, when the alias says (e.g. `Silicon Labs CP2102`). */
+	readonly description?: string;
+}
+
+/** An open serial port. Text is decoded as Latin-1 (one char per byte), as consoles print it. */
+export interface ISerialConnection {
+	readonly device: string;
+	onData(listener: (text: string) => void): IDisposable;
+	write(text: string): Promise<void>;
+	/**
+	 * Stops (true) or restarts (false) reading, so another program (esptool resetting the chip)
+	 * can use the port meanwhile; what arrives later is still delivered. Optional.
+	 */
+	hold?(on: boolean): void;
+	close(): Promise<void>;
+}
+
+/** Port: serial devices (ESP32 console, panic logs, core dumps over UART). */
+export interface ISerialPorts {
+	list(): Promise<SerialPortInfo[]>;
+	/**
+	 * The real device behind `path` (an alias such as `/dev/serial/by-id/…` resolves to its
+	 * `/dev/ttyUSB0`). Throws for anything that is not a serial device.
+	 */
+	resolve(path: string): Promise<string>;
+	open(device: string, options: { readonly baud: number }): Promise<ISerialConnection>;
+	/**
+	 * Resets an ESP32 through the USB-serial bridge's RTS/DTR lines (classic DevKit auto-reset
+	 * circuit) so it boots the application. Optional: hosts without it ask the user to press EN.
+	 */
+	resetEsp32?(device: string, signal?: AbortSignal): Promise<{ ok: boolean; detail: string }>;
 }

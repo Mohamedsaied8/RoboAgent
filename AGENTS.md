@@ -50,7 +50,7 @@ debugger-driven HIL checks), coordinated through a message bus.
   or from the environment. Programs that run as root must be root-owned along their whole link chain,
   with no ACLs.
 
-**Progress (2026-10-15)** — branch `firmware-agents` on `github.com/Mohamedsaied8/RoboAgent`:
+**Progress (2026-10-25)** — branch `firmware-agents` on `github.com/Mohamedsaied8/RoboAgent`:
 
 | Phase | Status |
 |---|---|
@@ -58,21 +58,25 @@ debugger-driven HIL checks), coordinated through a message bus.
 | P1 Dev agent (verified with the real arm-none-eabi-gcc + CMake on the STM32 fixture) | done |
 | P2a self-install of debug dependencies, STM32 + ESP32 (verified with real vendor downloads) | done |
 | P2a STM32 debug session (GDB/MI, OpenOCD, SVD, fault decode, Debug agent; verified on a Blue Pill STM32F103C8T6 + ST-Link V2) | done |
-| P2b ESP32 debug, P2c FreeRTOS awareness, P2d optional Rust/probe-rs spike | to do |
+| P2b ESP32 debug over the UART without a probe (ESP-IDF GDB stub, panic logs, core dumps; verified on an ESP32 DevKit on a CP2102 bridge). ESP32 JTAG wired, not hardware-verified | done |
+| P2c FreeRTOS awareness, P2d optional Rust/probe-rs spike | to do |
 | P3 Test agent + orchestration (bug-fix loop) | to do |
 | P4 RoboAgent extension, `fwagent` CLI, MCP server | to do |
 
 **What is left** (full list in `../agents_dev/agents_plan.md` §0.1, deferrals in `implementation.md`):
-P2b–P4; debug-session follow-ups (side-effect reads through expressions/conditions, the localhost GDB-port race); installer follow-ups (`HTTPS_PROXY`, a manifest refresh
+P2c–P4; ESP32 JTAG on hardware (needs an ESP-PROG or a USB-JTAG chip such as S3/C3), core dumps from the flash partition; debug-session follow-ups (side-effect reads through expressions/conditions, the localhost GDB-port race); installer follow-ups (`HTTPS_PROXY`, a manifest refresh
 script, ESP-IDF tools under `~/.espressif`, Windows driver checks); P4 wiring of the install opt-out
-setting/flag and `createDefaultToolStore()`; open decision on the ESP32 validation board.
+setting/flag and `createDefaultToolStore()`.
 
-**Verify.** `cd packages/firmware-agents && npm test` (215 tests). Optional:
+**Verify.** `cd packages/firmware-agents && npm test` (260 tests). Optional:
 `FWAGENT_NETWORK_TESTS=1 npm test` (real vendor downloads, ~90 MB; `=full` adds the 300 MB Arm
 toolchain); live LLM tests need `OPENROUTER_API_KEY` + `OPENROUTER_MODEL`. The real-toolchain tests
 skip when `arm-none-eabi-gcc`/`cmake` are missing. `FWAGENT_HW=1 npm test` runs the Debug agent on a real
-Blue Pill (STM32F103C8T6) over an ST-Link V2 — it **reflashes the board**. The GDB/MI layer is also tested by
-replaying a session recorded on that board (`src/test/fixtures/stm32f103-bluepill.mi.txt`).
+Blue Pill (STM32F103C8T6) over an ST-Link V2 and, when ESP-IDF is in the environment (`. $IDF_PATH/export.sh`),
+on an ESP32 DevKit over its USB-serial port (`$FWAGENT_ESP32_PORT`, or the only serial port) — it **reflashes
+the boards**. The GDB/MI layer is also tested by replaying sessions recorded on those boards
+(`src/test/fixtures/stm32f103-bluepill.mi.txt`, `esp32-stub.mi.txt`, `esp32-core.mi.txt`) and the ESP-IDF crash
+parsers with real panic logs and core dumps (`src/test/fixtures/esp32-*.log`).
 
 ## Working rules
 

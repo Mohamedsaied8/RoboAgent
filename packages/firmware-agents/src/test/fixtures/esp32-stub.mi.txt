@@ -1,0 +1,212 @@
+> 1-gdb-set mi-async on
+< =thread-group-added,id="i1"
+< =cmd-param-changed,param="auto-load gdb-scripts",value="off"
+< =cmd-param-changed,param="auto-load local-gdbinit",value="off"
+< =cmd-param-changed,param="auto-load python-scripts",value="off"
+< (gdb) 
+< 1^done
+< (gdb) 
+> 2-gdb-set confirm off
+< 2^done
+< (gdb) 
+> 3-gdb-set pagination off
+< 3^done
+< (gdb) 
+> 4-gdb-set width 0
+< 4^done
+< (gdb) 
+> 5-gdb-set print pretty off
+< 5^done
+< (gdb) 
+> 6-gdb-set print elements 64
+< 6^done
+< (gdb) 
+> 7-gdb-set mem inaccessible-by-default off
+< 7^done
+< (gdb) 
+> 8-gdb-set may-write-memory off
+< 8^done
+< (gdb) 
+> 9-gdb-set may-write-registers off
+< 9^done
+< (gdb) 
+> 10-gdb-set may-call-functions off
+< 10^done
+< (gdb) 
+> 11-file-exec-and-symbols "fw/esp32_debug.elf"
+< 11^done
+< (gdb) 
+> 12-gdb-set serial baud 115200
+< 12^done
+< (gdb) 
+> 13-gdb-set remote interrupt-on-connect on
+< 13^done
+< (gdb) 
+> 14-gdb-set remotetimeout 5
+< 14^done
+< (gdb) 
+> 15-target-select remote /dev/ttyUSB0
+< =thread-group-started,id="i1",pid="42000"
+< =thread-created,id="1",group-id="i1"
+< =thread-created,id="2",group-id="i1"
+< =thread-created,id="3",group-id="i1"
+< =thread-created,id="4",group-id="i1"
+< =thread-created,id="5",group-id="i1"
+< ~"0x40084ace in esp_cpu_wait_for_intr () at /opt/esp-idf/components/esp_hw_support/cpu.c:64\n"
+< ~"64\t}\n"
+< *stopped,frame={addr="0x40084ace",func="esp_cpu_wait_for_intr",args=[],file="/opt/esp-idf/components/esp_hw_support/cpu.c",fullname="/opt/esp-idf/components/esp_hw_support/cpu.c",line="64",arch="xtensa"},thread-id="1",stopped-threads="all"
+< 15^connected
+< (gdb) 
+> 16-data-evaluate-expression "s_scratch.state"
+< 16^done,value="GDBSTUB_NOT_STARTED"
+< (gdb) 
+> 17-data-evaluate-expression "sizeof(s_scratch.tasks)"
+< 17^done,value="384"
+< (gdb) 
+> 18-thread-info
+< 18^done,threads=[{id="1",target-id="Thread 1",details="Name: IDLE0 State: Running @CPU - 0",frame={level="0",addr="0x40084ace",func="esp_cpu_wait_for_intr",args=[],file="/opt/esp-idf/components/esp_hw_support/cpu.c",fullname="/opt/esp-idf/components/esp_hw_support/cpu.c",line="64",arch="xtensa"},state="stopped"},{id="2",target-id="Thread 2",details="Name: IDLE1 State: Running @CPU - 1",frame={level="0",addr="0x40084ace",func="esp_cpu_wait_for_intr",args=[],file="/opt/esp-idf/components/esp_hw_support/cpu.c",fullname="/opt/esp-idf/components/esp_hw_support/cpu.c",line="64",arch="xtensa"},state="stopped"},{id="3",target-id="Thread 3",details="Name: main State: Blocked",frame={level="0",addr="0x400839fc",func="esp_crosscore_int_send_yield",args=[{name="core_id",value="0"}],file="/opt/esp-idf/components/esp_system/crosscore_int.c",fullname="/opt/esp-idf/components/esp_system/crosscore_int.c",line="126",arch="xtensa"},state="stopped"},{id="4",target-id="Thread 4",details="Name: ipc0 State: Blocked",frame={level="0",addr="0x4000bff0",func="??",args=[],arch="xtensa"},state="stopped"},{id="5",target-id="Thread 5",details="Name: ipc1 State: Blocked",frame={level="0",addr="0x4000bff0",func="??",args=[],arch="xtensa"},state="stopped"}],current-thread-id="1"
+< (gdb) 
+> 19-break-insert "toggle_led"
+< 19^done,bkpt={number="1",type="breakpoint",disp="keep",enabled="y",addr="0x400d7898",func="toggle_led",file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="58",thread-groups=["i1"],times="0",original-location="toggle_led"}
+< (gdb) 
+> 20-exec-continue
+< 20^running
+< *running,thread-id="all"
+< (gdb) 
+< &"\342\232\240\357\270\217 warning: multi-threaded target stopped without sending a thread-id, using first non-exited thread\n"
+< =breakpoint-modified,bkpt={number="1",type="breakpoint",disp="keep",enabled="y",addr="0x400d7898",func="toggle_led",file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="58",thread-groups=["i1"],times="1",original-location="toggle_led"}
+< ~"\n"
+< ~"Thread 1 hit Breakpoint 1, toggle_led () at /work/esp32_debug/main/main.c:58\n"
+< ~"58\t{\n"
+< *stopped,reason="breakpoint-hit",disp="keep",bkptno="1",frame={addr="0x400d7898",func="toggle_led",args=[],file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="58",arch="xtensa"},thread-id="1",stopped-threads="all"
+> 21-data-evaluate-expression "counter"
+< 21^done,value="27"
+< (gdb) 
+> 22-data-evaluate-expression "sensor"
+< 22^done,value="{id = 7, reading = 27}"
+< (gdb) 
+> 23-data-evaluate-expression "$a2"
+< 23^done,value="3"
+< (gdb) 
+> 24-data-list-register-names
+< 24^done,register-names=["pc","ar0","ar1","ar2","ar3","ar4","ar5","ar6","ar7","ar8","ar9","ar10","ar11","ar12","ar13","ar14","ar15","ar16","ar17","ar18","ar19","ar20","ar21","ar22","ar23","ar24","ar25","ar26","ar27","ar28","ar29","ar30","ar31","ar32","ar33","ar34","ar35","ar36","ar37","ar38","ar39","ar40","ar41","ar42","ar43","ar44","ar45","ar46","ar47","ar48","ar49","ar50","ar51","ar52","ar53","ar54","ar55","ar56","ar57","ar58","ar59","ar60","ar61","ar62","ar63","lbeg","lend","lcount","sar","windowbase","windowstart","configid0","configid1","ps","threadptr","br","scompare1","acclo","acchi","m0","m1","m2","m3","expstate","f64r_lo","f64r_hi","f64s","f0","f1","f2","f3","f4","f5","f6","f7","f8","f9","f10","f11","f12","f13","f14","f15","fcr","fsr","mmid","ibreakenable","memctl","atomctl","ddr","ibreaka0","ibreaka1","dbreaka0","dbreaka1","dbreakc0","dbreakc1","epc1","epc2","epc3","epc4","epc5","epc6","epc7","depc","eps2","eps3","eps4","eps5","eps6","eps7","excsave1","excsave2","excsave3","excsave4","excsave5","excsave6","excsave7","cpenable","interrupt","intset","intclear","intenable","vecbase","exccause","debugcause","ccount","prid","icount","icountlevel","excvaddr","ccompare0","ccompare1","ccompare2","misc0","misc1","misc2","misc3","a0","a1","a2","a3","a4","a5","a6","a7","a8","a9","a10","a11","a12","a13","a14","a15","b0","b1","b2","b3","b4","b5","b6","b7","b8","b9","b10","b11","b12","b13","b14","b15","psintlevel","psum","pswoe","psexcm","pscallinc","psowb","acc","dbnum","f64r","roundmode","invalidenable","divzeroenable","overflowenable","underflowenable","inexactenable","invalidflag","divzeroflag","overflowflag","underflowflag","inexactflag","fpreserved20","fpreserved20a","fpreserved5"]
+< (gdb) 
+> 25-data-list-register-values x 0 65 66 67 68 69 70 73 143 149 157 158 159 160 161 162 163 164 165 166 167 168 169 170 171 172
+< 25^done,register-values=[{number="0",value="0x400d7898"},{number="65",value="0x4000c46c"},{number="66",value="0x4000c477"},{number="67",value="0xffffffff"},{number="68",value="0x4"},{number="69",value="0x0"},{number="70",value="0x1"},{number="73",value="0x60820"},{number="143",value="<unavailable>"},{number="149",value="<unavailable>"},{number="157",value="0x800d3f2f"},{number="158",value="0x3ffb4e10"},{number="159",value="0x3"},{number="160",value="0x3f4022e0"},{number="161",value="0x3f402354"},{number="162",value="0x104"},{number="163",value="0x3f4022e0"},{number="164",value="0x0"},{number="165",value="0x800d78c8"},{number="166",value="0x3ffb4df0"},{number="167",value="0xa"},{number="168",value="0x3ffb4e10"},{number="169",value="0x3ffb4df0"},{number="170",value="0xc"},{number="171",value="0x400d9a50"},{number="172",value="0x0"}]
+< (gdb) 
+> 26-break-watch "sensor.reading"
+< 26^done,wpt={number="2",exp="sensor.reading"}
+< (gdb) 
+> 27-exec-next
+< 27^running
+< *running,thread-id="all"
+< (gdb) 
+< *stopped,reason="end-stepping-range",frame={addr="0x400d789b",func="toggle_led",args=[],file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="59",arch="xtensa"},thread-id="1",stopped-threads="all"
+> 28-break-delete 2
+< 28^done
+< (gdb) 
+> 29-exec-continue
+< 29^running
+< *running,thread-id="all"
+< (gdb) 
+< =breakpoint-modified,bkpt={number="1",type="breakpoint",disp="keep",enabled="y",addr="0x400d7898",func="toggle_led",file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="58",thread-groups=["i1"],times="2",original-location="toggle_led"}
+< ~"\n"
+< ~"Thread 1 hit Breakpoint 1, toggle_led () at /work/esp32_debug/main/main.c:58\n"
+< ~"58\t{\n"
+< *stopped,reason="breakpoint-hit",disp="keep",bkptno="1",frame={addr="0x400d7898",func="toggle_led",args=[],file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="58",arch="xtensa"},thread-id="1",stopped-threads="all"
+> 30-break-delete 1
+< 30^done
+< (gdb) 
+> 31-break-watch "counter"
+< 31^done,wpt={number="3",exp="counter"}
+< (gdb) 
+> 32-exec-continue
+< 32^running
+< *running,thread-id="all"
+< (gdb) 
+< =breakpoint-modified,bkpt={number="3",type="hw watchpoint",disp="keep",enabled="y",what="counter",thread-groups=["i1"],times="1",original-location="counter"}
+< ~"\n"
+< ~"Thread 1 hit Hardware watchpoint 3: counter\n"
+< ~"\n"
+< ~"Old value = 28\n"
+< ~"New value = 29\n"
+< ~"toggle_led () at /work/esp32_debug/main/main.c:60\n"
+< ~"60\t    sensor.reading = (int32_t)(counter & 0xFF);\n"
+< *stopped,reason="watchpoint-trigger",wpt={number="3",exp="counter"},value={old="28",new="29"},frame={addr="0x400d78aa",func="toggle_led",args=[],file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="60",arch="xtensa"},thread-id="1",stopped-threads="all"
+> 33-break-delete 3
+< 33^done
+< (gdb) 
+> 34-data-evaluate-expression "(unsigned long)(&sensor)"
+< 34^done,value="1073415464"
+< (gdb) 
+> 35-data-read-memory-bytes 0x3FFB0528 8
+< 35^done,memory=[{begin="0x3ffb0528",offset="0x00000000",end="0x3ffb0530",contents="070000001c000000"}]
+< (gdb) 
+> 36-data-evaluate-expression "(unsigned long)(&fault_trigger)"
+< 36^done,value="1073428940"
+< (gdb) 
+> 37-data-evaluate-expression "(unsigned long)(&fault_trigger)"
+< 37^done,value="1073428940"
+< (gdb) 
+> 38-gdb-set may-write-memory on
+< 38^done
+< (gdb) 
+> 39-data-write-memory-bytes 0x3FFB39CC 01000000
+< 39^done
+< (gdb) 
+> 40-gdb-set may-write-memory off
+< 40^done
+< (gdb) 
+> 41-data-read-memory-bytes 0x3FFB39CC 4
+< 41^done,memory=[{begin="0x3ffb39cc",offset="0x00000000",end="0x3ffb39d0",contents="01000000"}]
+< (gdb) 
+> 42-exec-continue
+< 42^running
+< *running,thread-id="all"
+< (gdb) 
+< ~"\nThread "
+< ~"1 received signal SIGSEGV, Segmentation fault.\n"
+< ~"0x400db870 in read_sensor_bus () at /work/esp32_debug/main/main.c:31\n"
+< ~"31\t    return (int32_t)*sensor_bus;\n"
+< *stopped,reason="signal-received",signal-name="SIGSEGV",signal-meaning="Segmentation fault",frame={addr="0x400db870",func="read_sensor_bus",args=[],file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="31",arch="xtensa"},thread-id="1",stopped-threads="all"
+> 43-data-evaluate-expression "s_scratch.state"
+< 43^done,value="GDBSTUB_STARTED"
+< (gdb) 
+> 44-data-evaluate-expression "sizeof(s_scratch.tasks)"
+< 44^done,value="384"
+< (gdb) 
+> 45-data-evaluate-expression "(unsigned long)s_scratch.paniced_frame.exccause"
+< 45^done,value="28"
+< (gdb) 
+> 46-data-evaluate-expression "(unsigned long)s_scratch.paniced_frame.excvaddr"
+< 46^done,value="0"
+< (gdb) 
+> 47-data-evaluate-expression "$pc"
+< 47^done,value="0x400db870 <read_sensor_bus+8>"
+< (gdb) 
+> 48-stack-list-frames 0 15
+< 48^done,stack=[frame={level="0",addr="0x400db870",func="read_sensor_bus",file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="31",arch="xtensa"},frame={level="1",addr="0x400d77f3",func="run_seeded_bug",file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="67",arch="xtensa"},frame={level="2",addr="0x400d7900",func="app_main",file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="109",arch="xtensa"},frame={level="3",addr="0x400d3f2f",func="main_task",file="/opt/esp-idf/components/freertos/app_startup.c",fullname="/opt/esp-idf/components/freertos/app_startup.c",line="206",arch="xtensa"},frame={level="4",addr="0x400dc6f4",func="vPortTaskWrapper",file="/opt/esp-idf/components/freertos/FreeRTOS-Kernel/portable/xtensa/port.c",fullname="/opt/esp-idf/components/freertos/FreeRTOS-Kernel/portable/xtensa/port.c",line="147",arch="xtensa"}]
+< (gdb) 
+> 49-interpreter-exec console "x/i 0x400DB870"
+< ~"=> 0x400db870 <read_sensor_bus+8>:\tl32i.n\ta2, a8, 0\n"
+< 49^done
+< (gdb) 
+> 50-interpreter-exec console "info line *0x400DB870"
+< ~"Line 31 of \"/work/esp32_debug/main/main.c\" starts at address 0x400db86b <read_sensor_bus+3> and ends at 0x400db872 <read_sensor_bus+10>.\n"
+< 50^done
+< (gdb) 
+> 51-thread-info
+< 51^done,threads=[{id="1",target-id="Thread 1",details="Name: main State: Running @CPU - 0",frame={level="0",addr="0x400db870",func="read_sensor_bus",args=[],file="/work/esp32_debug/main/main.c",fullname="/work/esp32_debug/main/main.c",line="31",arch="xtensa"},state="stopped"},{id="2",target-id="Thread 2",details="Name: IDLE0 State: Ready",frame={level="0",addr="0x40084ace",func="esp_cpu_wait_for_intr",args=[],file="/opt/esp-idf/components/esp_hw_support/cpu.c",fullname="/opt/esp-idf/components/esp_hw_support/cpu.c",line="64",arch="xtensa"},state="stopped"},{id="3",target-id="Thread 3",details="Name: IDLE1 State: Running @CPU - 1",frame={level="0",addr="0x40084ace",func="esp_cpu_wait_for_intr",args=[],file="/opt/esp-idf/components/esp_hw_support/cpu.c",fullname="/opt/esp-idf/components/esp_hw_support/cpu.c",line="64",arch="xtensa"},state="stopped"},{id="4",target-id="Thread 4",details="Name: ipc0 State: Blocked",frame={level="0",addr="0x4000bff0",func="??",args=[],arch="xtensa"},state="stopped"},{id="5",target-id="Thread 5",details="Name: ipc1 State: Blocked",frame={level="0",addr="0x4000bff0",func="??",args=[],arch="xtensa"},state="stopped"}],current-thread-id="1"
+< (gdb) 
+> 52-interpreter-exec console "kill"
+< =thread-exited,id="1",group-id="i1"
+< =thread-exited,id="2",group-id="i1"
+< =thread-exited,id="3",group-id="i1"
+< =thread-exited,id="4",group-id="i1"
+< =thread-exited,id="5",group-id="i1"
+< =thread-group-exited,id="i1"
+< ~"[Inferior 1 (Remote target) killed]\n"
+< 52^done
+< (gdb) 
+> 53-gdb-exit
+< 53^exit

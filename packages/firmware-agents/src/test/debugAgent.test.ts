@@ -14,7 +14,8 @@ import { FakeHost, FakeSystemProbe } from './fakeHost';
 /** An in-memory target: 256 bytes of RAM at 0x20000000, a decoded RCC, a canned crash. */
 class FakeSession implements ITargetSession {
 	readonly target = { vendor: 'stm32', part: 'STM32F103C8T6', family: 'F1', arch: 'cortex-m', toolchainPrefix: 'arm-none-eabi-', exact: true } as const;
-	readonly server = { port: 1234, probe: 'STLINK V2J48S7', core: 'Cortex-M3 r1p1', targetVoltage: 3.28 };
+	readonly server = { transport: 'openocd', port: 1234, probe: 'STLINK V2J48S7', core: 'Cortex-M3 r1p1', targetVoltage: 3.28 } as const;
+	readonly live = true;
 	readonly budget = { breakpoints: 6, watchpoints: 4 };
 	readonly hasSymbols = true;
 	state: 'stopped' | 'running' = 'stopped';
@@ -53,6 +54,8 @@ class FakeSession implements ITargetSession {
 	}
 	async backtrace() { return [{ level: 0, address: '0x08000032', function: 'uart_init' }]; }
 	async locals() { return []; }
+	async threads() { return [{ id: 1, targetId: 'Thread 1', current: true }]; }
+	async selectThread() { return undefined; }
 	async peripherals() { return [{ name: 'RCC', baseAddress: '0x40021000' }, { name: 'USART2', baseAddress: '0x40004400' }]; }
 	async readPeripheral(name: string): Promise<DecodedPeripheral> {
 		const usart2en = this.snapshot ? 1 : 0;
@@ -130,7 +133,7 @@ suite('FirmwareDebugAgent', () => {
 		assert.deepStrictEqual(host.approvals.map(a => [a.toolName, a.category]), [['start_session', 'hardware'], ['write_memory', 'hardware']]);
 		assert.strictEqual(host.approvals[1].summary, 'Write 4 byte(s) (05000000) to target memory at &rx_count (0x20000010)');
 		// The ELF was found under fw/build; OpenOCD's scripts folder came from the trusted-folder search.
-		assert.deepStrictEqual([started?.elf, started?.gdb, started?.openocd.scriptsDir, started?.openocd.targetScript], ['fw/build/app.elf', '/usr/bin/arm-none-eabi-gdb', '/usr/share/openocd/scripts', 'target/stm32f1x.cfg']);
+		assert.deepStrictEqual([started?.elf, started?.gdb, started?.openocd?.scriptsDir, started?.openocd?.targetScript], ['fw/build/app.elf', '/usr/bin/arm-none-eabi-gdb', '/usr/share/openocd/scripts', 'target/stm32f1x.cfg']);
 		assert.deepStrictEqual(resultOf(llm, 'p1'), { peripheral: 'RCC', baseAddress: '0x40021000', registers: [{ name: 'APB1ENR', address: '0x4002101C', value: '0x00000000', fields: { USART2EN: 0 } }] });
 		assert.deepStrictEqual(resultOf(llm, 'e'), [{ expression: 'rx_count', value: '0' }, { expression: 'rx_count = 1', error: 'Expressions must not change the target' }] as unknown);
 		assert.deepStrictEqual(resultOf(llm, 'w'), { written: 4, address: '0x20000010', readBack: '05000000' });

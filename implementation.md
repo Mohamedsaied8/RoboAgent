@@ -5,7 +5,7 @@ Per-requirement context, scope, files, and verification. Task status lives in
 
 ---
 
-## REQ-7 — Firmware Agents: Dev · Debug · Test (2026-10-15, in progress — P0 + P1 + P2a (STM32 debug) done)
+## REQ-7 — Firmware Agents: Dev · Debug · Test (2026-10-15, in progress — P0 + P1 + P2a (STM32 debug) + P2b (ESP32 debug) done)
 
 **Context.** Three cooperating AI agents for STM32 / ESP32 firmware (with or without FreeRTOS):
 a **Dev** agent (toolchain setup, build, flash, apply change requests), a **Debug** agent
@@ -36,7 +36,7 @@ P3 Test agent + orchestrated bug loop · P4 RoboAgent / CLI / MCP adapters. Task
 `implementation_tasks.md`.
 
 **Decisions.** LLM = OpenRouter (OpenAI-compatible client); tests = GoogleTest + GMock, Unity
-fallback. STM32 validation board: Blue Pill (STM32F103C8T6) + ST-Link V2. Still open: the ESP32 board.
+fallback. Validation boards: Blue Pill (STM32F103C8T6) + ST-Link V2; ESP32 DevKit (ESP32-D0WDQ6, CP2102 USB-serial, no JTAG) since 2026-10-25.
 
 **P0 delivered (2026-10-15).** `packages/firmware-agents/`: kernel (ReAct `Agent`, tools + registry
 views, approval enforced for every non-read tool, typed `MessageBus`, JSON-schema validation with
@@ -116,6 +116,60 @@ addresses are refused); the localhost GDB port is reachable by other local users
 (`gdb_port pipe` would need GDB to start OpenOCD through a shell); OpenOcdFlasher (P1) still passes
 relative script names from the project folder — move it onto `locateDebugStack`; Fedora's multi-arch
 `gdb`; `objcopy` on RAM-placed load sections.
+
+**P2b ESP32 debug delivered (2026-10-25, R7.4) — over the UART, no JTAG probe needed.** The
+validation board is a classic ESP32 DevKit (ESP32-D0WDQ6, dual-core Xtensa LX6) on a CP2102
+USB-serial bridge; classic ESP32 has no USB-JTAG, so the agent debugs through what ESP-IDF itself
+offers on the console UART:
+- *Live, over ESP-IDF's GDB stub* (`CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME`, `CONFIG_ESP_SYSTEM_PANIC_GDBSTUB`):
+  `start_session` transport `serial` — GDB opens the tty itself (`interrupt-on-connect`, because
+  the runtime stub only wakes on Ctrl-C). Breakpoints (the stub answers only `Z0` and puts it in a
+  hardware comparator), stepping, watchpoints, memory, registers, FreeRTOS tasks as threads.
+  Stub quirks found on the board and handled: watchpoints set after a single-step never trigger
+  until the CPU stops at a breakpoint again (refused with that advice); a Ctrl-C halt reports a
+  stale signal (dropped; a real panic is recognised from the stub's `s_scratch.state`, whose saved
+  panic frame also gives EXCCAUSE/EXCVADDR); no detach (`kill` lets the program run on).
+- *Post-mortem*: `read_serial` (listen), `reset_and_capture` (reset through RTS with esptool, then
+  capture), `send_serial` (console command); `decode_panic` parses ESP-IDF crash reports (Guru
+  Meditation + register dump, abort, assert, stack overflow incl. the stack-canary watchpoint, task
+  and interrupt watchdogs, brownout, nested panics, corrupted backtraces, Xtensa and RISC-V) and
+  resolves the backtrace to source lines with GDB in batch mode, checking the ELF against the
+  firmware's ELF SHA-256; UART core dumps (`CONFIG_ESP_COREDUMP_ENABLE_TO_UART`, ELF format) are
+  checked (header, SHA-256/CRC32), their notes read (crashed task, EXCCAUSE/EXCVADDR, pseudo causes
+  64+N, abort/assert text, app ELF SHA) and opened in GDB (transport `coredump`): every task's
+  backtrace and locals. GDB is limited to memory the dump really holds (plus read-only code/flash
+  data), so globals the dump lacks are reported as missing instead of their ELF initial values.
+- `decode_crash` for ESP: exception and meaning, faulting instruction, the bad data address
+  (EXCVADDR, or computed from the faulting load/store's base register), the application frame
+  behind abort/assert/watchdog, task, backtrace.
+Code: `src/embedded/arch/esp.ts`, `src/embedded/crash/` (`espPanicLog.ts`, `espCoreDump.ts`),
+`src/embedded/serial/serialPort.ts` + `IAgentHost.serial` (`ISerialPorts`) with
+`src/adapters/node/nodeSerialPort.ts` (no native module: `stty` + a non-blocking tty stream),
+`src/embedded/debug/symbolizer.ts`, the session's three transports in `targetSession.ts`
+(OpenOCD / GDB stub / core file), `IFileSystem.readBytes/writeBytes`, JSON-schema `pattern`.
+ESP32 JTAG (openocd-esp32 with `esp-usb-jtag` / `esp-prog`) is wired into `locateDebugStack` but
+**not verified** (no probe). **Verified on hardware:** `FWAGENT_HW=1` builds the fixture with
+ESP-IDF v6.1, flashes it and runs the Debug agent live over the stub (tasks, breakpoint, watchpoint,
+memory write, seeded NULL-pointer crash → LoadProhibited at `read_sensor_bus (main.c:31)`, EXCVADDR
+0x0) and post-mortem (NULL pointer, assert, stack overflow, task watchdog, each from panic log and
+core dump). Two GDB/MI sessions recorded on the board are replayed in the unit tests.
+Reviews: independent code + security reviews, three rounds. Round 1: the ESP32's eFuse and SPI flash
+controller were writable through their AHB alias (0x6001A000, 0x60002000) — permanent eFuse burns
+possible after one approval; `send_serial` could feed `$M…#xx` packets to a panic GDB stub; quadratic
+regexes on firmware output (`=+ CORE DUMP END =+`) could freeze the host; esptool honoured a
+workspace `[esptool]` config (reset sequence); newest crashes dropped after 32; a cut-off core dump
+hid later lines; reset before the port was open lost the boot line; a stub without symbols turned a
+real panic into "interrupted"; RISC-V core dumps never decoded as faults; plus symbolizer realpath,
+redaction of parsed text, streamed ELF SHA-256 for large ELFs, ESP budgets over OpenOCD. Round 2: the
+6 MB capture cap made capture quadratic (chunks now joined once); a cut-off dump before a complete
+one swallowed the lines between (stripping is now line-based); the RISC-V cause is read from the
+crashed task's exception frame (ESP-IDF stores no mcause register); pausing the stream did not stop
+reading the tty during the esptool reset (now `readStop`). Every finding has a regression test.
+Deferred: core files under `.roboagent/coredumps/` are never deleted (`IFileSystem` has no delete);
+ESP32 JTAG and RISC-V chips not verified on hardware; core dumps from the flash partition; Espressif
+SVDs (no peripheral decode on ESP32 yet); esptool and the ESP-IDF GDB are found on PATH (export.sh)
+or in the tool store only; opening a port can pulse the reset line on bridges that set DTR and RTS
+separately (FTDI) — documented on `read_serial`.
 
 ---
 
