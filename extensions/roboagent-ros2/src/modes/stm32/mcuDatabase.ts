@@ -42,6 +42,8 @@ export interface Stm32Family {
 	readonly cmsisPrefix: string;
 	/** Typical flash origin; all STM32 map main flash at 0x08000000. */
 	readonly flashOrigin?: string;
+	/** Where the linker puts .data/.bss/stack when not 0x20000000 (H7: AXI SRAM, 0x20000000 is the 128 KB DTCM). */
+	readonly ramOrigin?: string;
 }
 
 export interface Stm32Part {
@@ -49,6 +51,13 @@ export interface Stm32Part {
 	readonly family: string;
 	readonly flashKb: number;
 	readonly ramKb: number;
+	/**
+	 * Size of the RAM block the linker script uses, when it is smaller than `ramKb` because the
+	 * datasheet total includes memories that are not contiguous with it (CCM, SRAM2 at
+	 * 0x10000000, DTCM, SRAM4, backup SRAM) or memory another core owns (WB: SRAM2 belongs to the
+	 * radio stack on CPU2). H723: 320 KB of AXI SRAM with the default TCM/AXI option bytes.
+	 */
+	readonly linkerRamKb?: number;
 	/** HAL/CMSIS device define, e.g. `STM32F407xx`. */
 	readonly define: string;
 	/** Per-part core/FPU override (e.g. F74x has a single-precision FPU). */
@@ -65,7 +74,7 @@ export const STM32_FAMILIES: readonly Stm32Family[] = [
 	{ id: 'F7', label: 'STM32F7 — Cortex-M7', core: 'cortex-m7', openocdTarget: 'stm32f7x', cmsisPrefix: 'stm32f7xx' },
 	{ id: 'G0', label: 'STM32G0 — Cortex-M0+ mainstream', core: 'cortex-m0plus', openocdTarget: 'stm32g0x', cmsisPrefix: 'stm32g0xx' },
 	{ id: 'G4', label: 'STM32G4 — Cortex-M4F mixed-signal', core: 'cortex-m4', openocdTarget: 'stm32g4x', cmsisPrefix: 'stm32g4xx' },
-	{ id: 'H7', label: 'STM32H7 — Cortex-M7 high performance', core: 'cortex-m7', openocdTarget: 'stm32h7x', cmsisPrefix: 'stm32h7xx' },
+	{ id: 'H7', label: 'STM32H7 — Cortex-M7 high performance', core: 'cortex-m7', openocdTarget: 'stm32h7x', cmsisPrefix: 'stm32h7xx', ramOrigin: '0x24000000' },
 	{ id: 'L0', label: 'STM32L0 — Cortex-M0+ ultra-low-power', core: 'cortex-m0plus', openocdTarget: 'stm32l0', cmsisPrefix: 'stm32l0xx' },
 	{ id: 'L4', label: 'STM32L4 — Cortex-M4F ultra-low-power', core: 'cortex-m4', openocdTarget: 'stm32l4x', cmsisPrefix: 'stm32l4xx' },
 	{ id: 'L5', label: 'STM32L5 — Cortex-M33 (TrustZone)', core: 'cortex-m33', openocdTarget: 'stm32l5x', cmsisPrefix: 'stm32l5xx' },
@@ -83,9 +92,9 @@ export const STM32_PARTS: readonly Stm32Part[] = [
 	{ name: 'STM32F103RBT6', family: 'F1', flashKb: 128, ramKb: 20, define: 'STM32F103xB', description: 'LQFP64, 72 MHz' },
 	{ name: 'STM32F103ZET6', family: 'F1', flashKb: 512, ramKb: 64, define: 'STM32F103xE', description: 'LQFP144, FSMC' },
 	// F3
-	{ name: 'STM32F303K8T6', family: 'F3', flashKb: 64, ramKb: 16, define: 'STM32F303x8', description: 'LQFP32, Nucleo-32' },
-	{ name: 'STM32F303RET6', family: 'F3', flashKb: 512, ramKb: 80, define: 'STM32F303xE', description: 'LQFP64, Nucleo-64' },
-	{ name: 'STM32F334R8T6', family: 'F3', flashKb: 64, ramKb: 16, define: 'STM32F334x8', description: 'LQFP64, HRTIM' },
+	{ name: 'STM32F303K8T6', family: 'F3', flashKb: 64, ramKb: 16, linkerRamKb: 12, define: 'STM32F303x8', description: 'LQFP32, Nucleo-32' },
+	{ name: 'STM32F303RET6', family: 'F3', flashKb: 512, ramKb: 80, linkerRamKb: 64, define: 'STM32F303xE', description: 'LQFP64, Nucleo-64' },
+	{ name: 'STM32F334R8T6', family: 'F3', flashKb: 64, ramKb: 16, linkerRamKb: 12, define: 'STM32F334x8', description: 'LQFP64, HRTIM' },
 	// F4
 	{ name: 'STM32F401RET6', family: 'F4', flashKb: 512, ramKb: 96, define: 'STM32F401xE', description: 'LQFP64, Nucleo-64, 84 MHz' },
 	{ name: 'STM32F405RGT6', family: 'F4', flashKb: 1024, ramKb: 128, define: 'STM32F405xx', description: 'LQFP64, 168 MHz' },
@@ -105,25 +114,25 @@ export const STM32_PARTS: readonly Stm32Part[] = [
 	{ name: 'STM32G474RET6', family: 'G4', flashKb: 512, ramKb: 128, define: 'STM32G474xx', description: 'LQFP64, Nucleo-64, HRTIM, 170 MHz' },
 	{ name: 'STM32G491RET6', family: 'G4', flashKb: 512, ramKb: 112, define: 'STM32G491xx', description: 'LQFP64, Nucleo-64' },
 	// H7
-	{ name: 'STM32H723ZGT6', family: 'H7', flashKb: 1024, ramKb: 564, define: 'STM32H723xx', description: 'LQFP144, Nucleo-144, 550 MHz' },
-	{ name: 'STM32H743ZIT6', family: 'H7', flashKb: 2048, ramKb: 1024, define: 'STM32H743xx', description: 'LQFP144, Nucleo-144, 480 MHz' },
-	{ name: 'STM32H750VBT6', family: 'H7', flashKb: 128, ramKb: 1024, define: 'STM32H750xx', description: 'LQFP100, value line (external flash)' },
-	{ name: 'STM32H7A3ZIT6', family: 'H7', flashKb: 2048, ramKb: 1344, define: 'STM32H7A3xx', description: 'LQFP144, Nucleo-144, 280 MHz' },
+	{ name: 'STM32H723ZGT6', family: 'H7', flashKb: 1024, ramKb: 564, linkerRamKb: 320, define: 'STM32H723xx', description: 'LQFP144, Nucleo-144, 550 MHz' },
+	{ name: 'STM32H743ZIT6', family: 'H7', flashKb: 2048, ramKb: 1024, linkerRamKb: 512, define: 'STM32H743xx', description: 'LQFP144, Nucleo-144, 480 MHz' },
+	{ name: 'STM32H750VBT6', family: 'H7', flashKb: 128, ramKb: 1024, linkerRamKb: 512, define: 'STM32H750xx', description: 'LQFP100, value line (external flash)' },
+	{ name: 'STM32H7A3ZIT6', family: 'H7', flashKb: 2048, ramKb: 1344, linkerRamKb: 1024, define: 'STM32H7A3xx', description: 'LQFP144, Nucleo-144, 280 MHz' },
 	// L0
 	{ name: 'STM32L031K6T6', family: 'L0', flashKb: 32, ramKb: 8, define: 'STM32L031xx', description: 'LQFP32, Nucleo-32' },
 	{ name: 'STM32L072CZT6', family: 'L0', flashKb: 192, ramKb: 20, define: 'STM32L072xx', description: 'LQFP48, USB, LoRa modules' },
 	// L4
 	{ name: 'STM32L432KCU6', family: 'L4', flashKb: 256, ramKb: 64, define: 'STM32L432xx', description: 'UFQFPN32, Nucleo-32' },
-	{ name: 'STM32L476RGT6', family: 'L4', flashKb: 1024, ramKb: 128, define: 'STM32L476xx', description: 'LQFP64, Nucleo-64, 80 MHz' },
+	{ name: 'STM32L476RGT6', family: 'L4', flashKb: 1024, ramKb: 128, linkerRamKb: 96, define: 'STM32L476xx', description: 'LQFP64, Nucleo-64, 80 MHz' },
 	{ name: 'STM32L4R5ZIT6', family: 'L4', flashKb: 2048, ramKb: 640, define: 'STM32L4R5xx', description: 'LQFP144, Nucleo-144, 120 MHz' },
 	// L5
 	{ name: 'STM32L552ZET6', family: 'L5', flashKb: 512, ramKb: 256, define: 'STM32L552xx', description: 'LQFP144, Nucleo-144, TrustZone' },
 	// U5
-	{ name: 'STM32U575ZIT6', family: 'U5', flashKb: 2048, ramKb: 786, define: 'STM32U575xx', description: 'LQFP144, Nucleo-144, 160 MHz' },
-	{ name: 'STM32U585AII6', family: 'U5', flashKb: 2048, ramKb: 786, define: 'STM32U585xx', description: 'UFBGA169, B-U585I-IOT02A' },
+	{ name: 'STM32U575ZIT6', family: 'U5', flashKb: 2048, ramKb: 786, linkerRamKb: 768, define: 'STM32U575xx', description: 'LQFP144, Nucleo-144, 160 MHz' },
+	{ name: 'STM32U585AII6', family: 'U5', flashKb: 2048, ramKb: 786, linkerRamKb: 768, define: 'STM32U585xx', description: 'UFBGA169, B-U585I-IOT02A' },
 	// WB
-	{ name: 'STM32WB55RGV6', family: 'WB', flashKb: 1024, ramKb: 256, define: 'STM32WB55xx', description: 'VFQFPN68, Nucleo-WB55, BLE 5' },
-	{ name: 'STM32WB55CGU6', family: 'WB', flashKb: 1024, ramKb: 256, define: 'STM32WB55xx', description: 'UFQFPN48, BLE 5' },
+	{ name: 'STM32WB55RGV6', family: 'WB', flashKb: 1024, ramKb: 256, linkerRamKb: 192, define: 'STM32WB55xx', description: 'VFQFPN68, Nucleo-WB55, BLE 5' },
+	{ name: 'STM32WB55CGU6', family: 'WB', flashKb: 1024, ramKb: 256, linkerRamKb: 192, define: 'STM32WB55xx', description: 'UFQFPN48, BLE 5' },
 ];
 
 /** A fully resolved target the generator can work from. */
@@ -134,6 +143,8 @@ export interface ResolvedStm32Target {
 	readonly flags: CoreFlags;
 	readonly flashKb: number;
 	readonly ramKb: number;
+	/** The RAM region in the linker script: origin (hex) and size in KB. */
+	readonly linkerRam: { readonly origin: string; readonly kb: number };
 	readonly define: string;
 	/** False when the part was not in the catalog and sizes/define are guesses. */
 	readonly exact: boolean;
@@ -187,6 +198,7 @@ export function resolveTarget(partNumber: string): ResolvedStm32Target {
 		flags,
 		flashKb: known?.flashKb ?? 256,
 		ramKb: known?.ramKb ?? 64,
+		linkerRam: { origin: family.ramOrigin ?? '0x20000000', kb: known?.linkerRamKb ?? known?.ramKb ?? 64 },
 		define: known?.define ?? guessDefine(part),
 		exact: known !== undefined,
 	};

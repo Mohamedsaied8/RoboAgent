@@ -387,7 +387,7 @@ Default_Handler:
 
 function linkerScript(t: ResolvedStm32Target): string {
 	return `/* ${MARKER}
- * Linker script stub for ${t.part}: ${t.flashKb} KB flash @ 0x08000000, ${t.ramKb} KB RAM @ 0x20000000.
+ * Linker script stub for ${t.part}: ${t.flashKb} KB flash @ 0x08000000, ${t.linkerRam.kb} KB RAM @ ${t.linkerRam.origin}${t.linkerRam.kb !== t.ramKb ? ` (of ${t.ramKb} KB in total)` : ''}.
  * ${t.exact ? 'Sizes come from the RoboAgent MCU catalog; check them against the datasheet for your exact variant.' : 'THIS PART IS NOT IN THE ROBOAGENT CATALOG — the sizes below are conservative defaults. Fix them from the datasheet.'}
  * Replace with the STM32Cube-generated ${t.part}_FLASH.ld for the full memory map (CCM, DTCM, backup SRAM…).
  */
@@ -400,7 +400,7 @@ _Min_Stack_Size = 0x400;
 MEMORY
 {
   FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = ${t.flashKb}K
-  RAM   (xrw) : ORIGIN = 0x20000000, LENGTH = ${t.ramKb}K
+  RAM   (xrw) : ORIGIN = ${t.linkerRam.origin}, LENGTH = ${t.linkerRam.kb}K
 }
 
 SECTIONS

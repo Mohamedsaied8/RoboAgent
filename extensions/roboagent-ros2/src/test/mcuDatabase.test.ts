@@ -49,6 +49,30 @@ suite('STM32 MCU database', () => {
 		assert.ok(getPart('STM32L476RGT6'));
 	});
 
+	// Regression (task board A11): the linker stub put every part's total RAM at 0x20000000. On the H7
+	// that is the 128 KB DTCM (the stack of an H743 started 1 MB up, outside any RAM); on F3/L476/U5 the
+	// total included CCM / SRAM2 / SRAM4, which are not contiguous with the main SRAM.
+	test('linker RAM region: contiguous main SRAM only, AXI SRAM on the H7', () => {
+		const ram = (p: string) => resolveTarget(p).linkerRam;
+		assert.deepStrictEqual(
+			['STM32H743ZIT6', 'STM32H723ZGT6', 'STM32WB55RGV6', 'STM32H7A3ZIT6', 'STM32H753ZIT6', 'STM32F303RET6', 'STM32L476RGT6', 'STM32U575ZIT6', 'STM32F407VGT6', 'STM32F103C8T6'].map(p => [p, ram(p)]),
+			[
+				['STM32H743ZIT6', { origin: '0x24000000', kb: 512 }],
+				['STM32H723ZGT6', { origin: '0x24000000', kb: 320 }],
+				['STM32WB55RGV6', { origin: '0x20000000', kb: 192 }],
+				['STM32H7A3ZIT6', { origin: '0x24000000', kb: 1024 }],
+				['STM32H753ZIT6', { origin: '0x24000000', kb: 64 }],
+				['STM32F303RET6', { origin: '0x20000000', kb: 64 }],
+				['STM32L476RGT6', { origin: '0x20000000', kb: 96 }],
+				['STM32U575ZIT6', { origin: '0x20000000', kb: 768 }],
+				['STM32F407VGT6', { origin: '0x20000000', kb: 128 }],
+				['STM32F103C8T6', { origin: '0x20000000', kb: 20 }],
+			]);
+		for (const p of STM32_PARTS) {
+			assert.ok((p.linkerRamKb ?? p.ramKb) <= p.ramKb, p.name);
+		}
+	});
+
 	test('free-text part of a known family: family core, default sizes, guessed define', () => {
 		const t = resolveTarget('STM32F412ZGT6');
 		assert.strictEqual(t.exact, false);

@@ -31,7 +31,8 @@ suite('STM32 generator', () => {
 		assert.ok(files.has('startup_stm32h743xx.s'));
 		const ld = files.get('STM32H743ZIT6_FLASH.ld')!;
 		assert.ok(ld.includes('FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 2048K'));
-		assert.ok(ld.includes('LENGTH = 1024K'));
+		// AXI SRAM, not the 128 KB DTCM at 0x20000000 (task board A11).
+		assert.ok(ld.includes('RAM   (xrw) : ORIGIN = 0x24000000, LENGTH = 512K'));
 		assert.ok(files.has('.vscode/launch.json') && files.has('.vscode/tasks.json'));
 		// IntelliSense is clangd (cpptools is not shipped): no c_cpp_properties.json, clangd reads build/compile_commands.json
 		// and may run only Arm GCCs from toolchain install folders.
