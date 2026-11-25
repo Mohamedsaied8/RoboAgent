@@ -143,6 +143,7 @@ export default tseslint.config(
 			'extensions/roboagent-ros2/src/**/*.{js,ts}',
 			'extensions/roboagent-ai/src/**/*.{js,ts}',
 			'src/vs/platform/roboagentAuth/**/*.{js,ts}',
+			'src/vs/platform/extensions/common/roboagent*.ts',
 			'packages/firmware-agents/src/**/*.{js,ts}',
 		],
 		rules: {

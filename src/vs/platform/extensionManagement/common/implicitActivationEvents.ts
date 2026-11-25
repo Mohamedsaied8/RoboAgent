@@ -6,6 +6,7 @@
 import { IStringDictionary } from '../../../base/common/collections.js';
 import { onUnexpectedError } from '../../../base/common/errors.js';
 import { ExtensionIdentifier, IExtensionDescription } from '../../extensions/common/extensions.js';
+import { roboAgentActivationEvents } from '../../extensions/common/roboagentActivationOverrides.js';
 
 export interface IActivationEventsGenerator<T> {
 	(contributions: readonly T[]): Iterable<string>;
@@ -26,7 +27,9 @@ export class ImplicitActivationEventsImpl {
 	 */
 	public readActivationEvents(extensionDescription: IExtensionDescription): string[] {
 		if (!this._cache.has(extensionDescription)) {
-			this._cache.set(extensionDescription, this._readActivationEvents(extensionDescription));
+			// RoboAgent: narrower activation for some bundled extensions (see roboagentActivationOverrides).
+			const events = this._readActivationEvents(extensionDescription);
+			this._cache.set(extensionDescription, [...roboAgentActivationEvents({ identifier: extensionDescription.identifier, activationEvents: events }) ?? events]);
 		}
 		return this._cache.get(extensionDescription)!;
 	}

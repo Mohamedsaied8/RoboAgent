@@ -14,6 +14,7 @@ import { ISearchService } from '../../search/common/search.js';
 import { toWorkspaceFolder } from '../../../../platform/workspace/common/workspace.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { promiseWithResolvers } from '../../../../base/common/async.js';
+import { roboAgentActivationEvents } from '../../../../platform/extensions/common/roboagentActivationOverrides.js';
 
 const WORKSPACE_CONTAINS_TIMEOUT = 7000;
 
@@ -31,7 +32,8 @@ export interface IExtensionActivationResult {
 }
 
 export function checkActivateWorkspaceContainsExtension(host: IExtensionActivationHost, desc: IExtensionDescription): Promise<IExtensionActivationResult | undefined> {
-	const activationEvents = desc.activationEvents;
+	// RoboAgent: some bundled extensions get narrower `workspaceContains` patterns.
+	const activationEvents = roboAgentActivationEvents(desc);
 	if (!activationEvents) {
 		return Promise.resolve(undefined);
 	}
