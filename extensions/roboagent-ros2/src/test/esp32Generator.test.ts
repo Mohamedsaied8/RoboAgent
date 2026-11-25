@@ -5,6 +5,7 @@
 
 import * as assert from 'assert';
 import { ESP32_CHIPS, esp32DebugConfiguration, esp32IdfCommand, generateEsp32Project, isEsp32Chip } from '../modes/esp32/generator';
+import { ESP_QUERY_DRIVERS, queryDriverArgument } from '../modes/clangd';
 
 suite('ESP32 generator', () => {
 
@@ -16,7 +17,9 @@ suite('ESP32 generator', () => {
 		assert.ok(files.get('main/main.c')!.includes('void app_main(void)'));
 		assert.ok(files.get('sdkconfig.defaults')!.includes('CONFIG_IDF_TARGET="esp32s3"'));
 		assert.ok(files.get('.vscode/tasks.json')!.includes('set-target esp32s3'));
-		for (const name of ['.vscode/settings.json', '.vscode/launch.json', '.vscode/tasks.json', '.vscode/c_cpp_properties.json']) {
+		assert.ok(!files.has('.vscode/c_cpp_properties.json'), 'IntelliSense is clangd, not cpptools');
+		assert.deepStrictEqual(JSON.parse(files.get('.vscode/settings.json')!)['clangd.arguments'], [queryDriverArgument(ESP_QUERY_DRIVERS)]);
+		for (const name of ['.vscode/settings.json', '.vscode/launch.json', '.vscode/tasks.json']) {
 			assert.doesNotThrow(() => JSON.parse(files.get(name)!), name);
 		}
 		assert.strictEqual(JSON.parse(files.get('.vscode/settings.json')!)['roboagent.mode'], 'esp32');

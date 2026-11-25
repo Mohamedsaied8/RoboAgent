@@ -7,9 +7,11 @@ how it gets into the `.deb`, and the one case where bundling is not possible.
 | Extension | Id | Version | License | How it ships |
 |---|---|---|---|---|
 | ESP-IDF | `espressif.esp-idf-extension` | **2.2.0** (pinned) | Apache-2.0 | Built-in (`product.json` → `builtInExtensions`) |
-| C/C++ (IntelliSense + `cppdbg`) | `ms-vscode.cpptools` | 1.32.2 | MIT | Built-in (already bundled) |
+| clangd (C/C++ IntelliSense) | `llvm-vs-code-extensions.vscode-clangd` | 0.6.0 | MIT | Built-in |
 | CMake Tools | `ms-vscode.cmake-tools` | 1.23.52 | MIT | Built-in (already bundled) |
-| Cortex-Debug (STM32 on-chip debugging) | `marus25.cortex-debug` | 1.12.1 | MIT | **Installed on first use** of STM32 mode from Open VSX (`roboagent.stm32.ensureExtension`) |
+| Cortex-Debug (STM32 on-chip debugging) | `marus25.cortex-debug` | 1.12.1 | MIT | Built-in |
+| Cortex-Debug's dependencies | `mcu-debug.debug-tracker-vscode` 0.0.15, `mcu-debug.memory-view` 0.0.29, `mcu-debug.rtos-views` 0.0.18, `mcu-debug.peripheral-viewer` 1.6.5 | — | MIT | Built-in |
+| ~~C/C++ (cpptools)~~ | `ms-vscode.cpptools` | — | Microsoft licence | **Not shipped** since 2026-11-25: its licence allows use only with Microsoft's products (it showed a notice saying so on every start). clangd + Cortex-Debug replace it. |
 | STM32CubeIDE for VS Code | `stmicroelectronics.stm32-vscode-extension` | 3.10.0 | ST SLA0048 (proprietary) | **Not bundled, not auto-installed** — see below |
 
 ## How bundling works in this fork
@@ -65,11 +67,21 @@ Therefore STM32 mode is built on the **open-source stack**, all of it available 
 
 - **Create/Build** need no extension at all: RoboAgent generates a CMake project for
   `arm-none-eabi-gcc` (see `docs/modes.md`).
-- **Debug** uses **Cortex-Debug** (`marus25.cortex-debug`, MIT) over OpenOCD / ST-Link. It is not
-  bundled because it declares four `extensionDependencies` (`mcu-debug.*`) that would all have
-  to ship too; instead `roboagent.stm32.ensureExtension` installs it (with its dependencies)
-  from Open VSX the first time STM32 mode is selected, after a notification. Until then Debug
-  falls back to the bundled cpptools `cppdbg` driver talking to an OpenOCD GDB server.
+- **Debug** uses **Cortex-Debug** (`marus25.cortex-debug`, MIT) over OpenOCD / ST-Link. It ships
+  as a built-in together with its four `extensionDependencies` (`mcu-debug.*`, MIT). If a user
+  disables or removes it, Debug offers to reinstall it (`roboagent.stm32.ensureExtension`).
+- **IntelliSense** is **clangd** (`llvm-vs-code-extensions.vscode-clangd`, MIT). The clangd
+  *program* is not bundled: the extension offers to download the official release when it is
+  missing. It reads `build/compile_commands.json` (CMake, ESP-IDF) or a `compile_flags.txt` plus a
+  `.clangd` naming `arm-none-eabi-gcc` (STM32 Makefile projects). `--query-driver`
+  (`src/modes/clangd.ts`) lets it ask only Arm / Espressif GCCs in their install folders for
+  system headers — single-segment wildcards, no `**` — so a repository's compile_commands.json
+  cannot make it run a "compiler" shipped in the repository. Workspace settings can still change
+  `clangd.arguments` / `clangd.path`; clangd does not run in untrusted workspaces.
+- Known gaps: the ESP-IDF extension rewrites `.vscode/settings.json` clangd settings (its
+  esp-clang, `--query-driver=**`) when it configures an ESP32 project; CMake Tools' palette command
+  *CMake: Debug* still builds a `cppdbg` configuration and does not work (use RoboAgent's Debug);
+  ROS2 C++ IntelliSense needs colcon to export compile_commands.json (task board A14).
 - Users who want ST's official extension (CubeMX integration, ST-Link server) can install it
   themselves under ST's terms; the *ensure* command links to the instructions. RoboAgent detects
   it and logs its presence, and the generated STM32 projects remain plain CMake projects that

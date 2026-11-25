@@ -12,6 +12,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { ARM_QUERY_DRIVERS, ESP_QUERY_DRIVERS, queryDriverArgument } from '../modes/clangd';
 
 interface MenuItem { command: string; when?: string }
 interface Manifest {
@@ -45,6 +46,7 @@ suite('Extension manifest', () => {
 
 	test('CMake Tools: no status-bar build / launch / debug, no configure (kit prompt) on open, no kit scan (reconfigure prompt)', () => {
 		assert.deepStrictEqual(manifest.contributes.configurationDefaults, {
+			'clangd.arguments': [queryDriverArgument([...ARM_QUERY_DRIVERS, ...ESP_QUERY_DRIVERS])],
 			'cmake.configureOnOpen': false,
 			'cmake.enableAutomaticKitScan': false,
 			'cmake.options.advanced': {
@@ -53,6 +55,30 @@ suite('Extension manifest', () => {
 				debug: { statusBarVisibility: 'hidden' },
 			},
 		});
+	});
+
+	// Review finding: `**` becomes `.*` in clangd's glob, so `/opt/**/bin/…` also matched
+	// `/opt/../home/<user>/<repo>/bin/…` — a compiler shipped inside a repository.
+	test('clangd --query-driver allow-list: real toolchain folders only, single-segment wildcards', () => {
+		const drivers = [...ARM_QUERY_DRIVERS, ...ESP_QUERY_DRIVERS].map(d => d.replace('${userHome}', '/home/u'));
+		// clangd's glob: `**` → any characters, `*` → anything but '/'.
+		const toRegex = (glob: string) => new RegExp('^' + glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\u0000/g, '.*') + '$');
+		const allowed = (p: string) => drivers.some(d => toRegex(d).test(p));
+		assert.ok(drivers.every(d => !d.includes('**')));
+		assert.deepStrictEqual([
+			'/usr/bin/arm-none-eabi-gcc',
+			'/opt/gcc-arm-none-eabi-10/bin/arm-none-eabi-gcc',
+			'/opt/st/stm32cubeide_2.2.0/plugins/com.st.gnu-tools-for-stm32.14.3/tools/bin/arm-none-eabi-gcc',
+			'/home/u/.local/share/roboagent/tools/xpack-arm-none-eabi-gcc/15.2.1-1.1/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/arm-none-eabi-gcc',
+			'/home/u/.espressif/tools/xtensa-esp-elf/esp-15.2.0_20251204/xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc',
+			'/home/u/.espressif/tools/riscv32-esp-elf/esp-15.2.0_20251204/riscv32-esp-elf/bin/riscv32-esp-elf-gcc',
+		].map(allowed), [true, true, true, true, true, true]);
+		assert.deepStrictEqual([
+			'/opt/../home/u/repo/bin/arm-none-eabi-gcc',
+			'/home/u/repo/tools/bin/arm-none-eabi-gcc',
+			'/home/u/.espressif/tools/../../repo/x/bin/xtensa-esp32-elf-gcc',
+			'/tmp/evil/bin/arm-none-eabi-gcc',
+		].map(allowed), [false, false, false, false]);
 	});
 
 	test('problem matchers for gcc, colcon and CMake are contributed', () => {

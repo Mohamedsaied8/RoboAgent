@@ -32,7 +32,7 @@ whose behaviour follows the mode:
 |---|---|---|---|
 | **Create** | CMake/Makefile firmware or library for any STM32 part (bundled MCU catalog, correct `-mcpu/-mfpu/-mfloat-abi`, linker + startup stubs) | ESP-IDF project for `esp32`…`esp32h2` (`sdkconfig.defaults`, `idf.py set-target`) | `ros2 pkg create` with build type + dependencies, launch file, instant re-index |
 | **Build** | `arm-none-eabi-gcc` via CMake/Make, errors in Problems | `espIdf.buildDevice` or `idf.py build` | `colcon build --symlink-install` (package-scoped) |
-| **Debug** | Cortex-Debug / OpenOCD, cpptools fallback | ESP-IDF `gdbtarget`, flash + monitor fallback | debugpy / lldb-dap on a built node |
+| **Debug** | Cortex-Debug / OpenOCD | ESP-IDF `gdbtarget`, flash + monitor fallback | debugpy / lldb-dap on a built node |
 
 The mode is auto-detected when a folder opens (`.ioc` → STM32, `sdkconfig` → ESP32,
 `package.xml` → ROS2) and remembered per workspace. The **ESP-IDF** extension ships built-in;

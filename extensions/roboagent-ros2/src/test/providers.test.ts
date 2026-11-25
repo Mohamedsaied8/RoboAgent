@@ -188,18 +188,14 @@ suite('STM32 provider', () => {
 		assert.strictEqual(offPath.debugSessions[0].configuration.gdbPath, undefined);
 	});
 
-	test('debug falls back to cpptools + OpenOCD when Cortex-Debug is absent but gdb exists', async () => {
-		await fakeElf();
-		host.tools.add('arm-none-eabi-gdb').add('openocd');
+	// cpptools is no longer shipped (its licence limits it to Microsoft products): no cppdbg fallback.
+	test('debug with Cortex-Debug disabled says so first (before toolchain or build prompts) and shows it in Extensions', async () => {
+		// No toolchain and no .elf: still only the Cortex-Debug message.
+		host.autoPick = 'Show Cortex-Debug';
 		await new Stm32ModeProvider(host).debug();
-		assert.strictEqual(host.debugSessions[0].configuration.type, 'cppdbg');
-		assert.strictEqual(host.debugSessions[0].configuration.miDebuggerPath, 'arm-none-eabi-gdb');
-		assert.strictEqual(host.debugSessions[0].configuration.miDebuggerServerAddress, 'localhost:3333');
-
-		const multiarch = new FakeHost();
-		multiarch.tools.add('gdb-multiarch').add('openocd');
-		await new Stm32ModeProvider(multiarch).debug();
-		assert.strictEqual(multiarch.debugSessions[0].configuration.miDebuggerPath, 'gdb-multiarch');
+		assert.strictEqual(host.debugSessions.length, 0);
+		assert.deepStrictEqual(host.messages.map(m => [m.level, m.actions]), [['error', ['Show Cortex-Debug']]]);
+		assert.deepStrictEqual(host.commands, [{ id: 'workbench.extensions.search', args: ['@id:marus25.cortex-debug'] }]);
 	});
 
 	test('debug without openocd / gdb offers the toolchain installer instead of a session', async () => {
@@ -328,23 +324,16 @@ suite('STM32 provider — STM32CubeIDE workspace', () => {
 		await fs.promises.mkdir(path.join(project, 'build'), { recursive: true });
 		await fs.promises.writeFile(path.join(project, 'build', 'gpio_test.elf'), 'new');
 
-		await new Stm32ModeProvider(host).debug();
-		assert.strictEqual(host.debugSessions.length, 1, JSON.stringify(host.messages));
-		assert.strictEqual(host.debugSessions[0].folder, project);
-		const cfg = host.debugSessions[0].configuration;
-		assert.strictEqual(cfg.type, 'cppdbg');
-		assert.strictEqual(cfg.program, path.join(project, 'build', 'gpio_test.elf'));
-		assert.strictEqual(cfg.cwd, project);
-		assert.strictEqual(cfg.miDebuggerPath, cube.gdb);
-		assert.strictEqual(cfg.debugServerPath, cube.openocd);
-		assert.strictEqual(cfg.debugServerArgs, `-s ${cube.scripts} -f interface/stlink-dap.cfg -f target/stm32f1x.cfg`);
-
 		const cortex = new FakeHost();
 		cortex.cubeIdeInstalls.push(...host.cubeIdeInstalls);
 		cortex.tools.add('arm-none-eabi-gcc');   // system compiler on PATH, GDB only in STM32CubeIDE
 		cortex.installed.add('marus25.cortex-debug');
 		await new Stm32ModeProvider(cortex).debug();
+		assert.strictEqual(cortex.debugSessions.length, 1, JSON.stringify(cortex.messages));
+		assert.strictEqual(cortex.debugSessions[0].folder, project);
 		const c = cortex.debugSessions[0].configuration;
+		assert.strictEqual(c.type, 'cortex-debug');
+		assert.strictEqual(c.cwd, project);
 		assert.strictEqual(c.executable, path.join(project, 'build', 'gpio_test.elf'));
 		assert.strictEqual(c.device, 'STM32F103C8TX');
 		assert.strictEqual(c.gdbPath, cube.gdb);
@@ -358,6 +347,7 @@ suite('STM32 provider — STM32CubeIDE workspace', () => {
 		await fs.promises.mkdir(path.join(project, 'build'), { recursive: true });
 		await fs.promises.writeFile(path.join(project, 'build', 'gpio_test.elf'), 'ELF');
 		host.tools.add('openocd').add('arm-none-eabi-gdb');
+		host.installed.add('marus25.cortex-debug');
 		host.processResult = { exitCode: 1, output: 'Open On-Chip Debugger 0.12.0\nInfo : auto-selecting first available session transport "dapdirect_swd".\nError: open failed\n' };
 		await new Stm32ModeProvider(host).debug();
 		assert.strictEqual(host.debugSessions.length, 0);
@@ -370,6 +360,7 @@ suite('STM32 provider — STM32CubeIDE workspace', () => {
 
 		const unstarted = new FakeHost();
 		unstarted.tools.add('openocd').add('arm-none-eabi-gdb');
+		unstarted.installed.add('marus25.cortex-debug');
 		unstarted.debugStarts = false;
 		await new Stm32ModeProvider(unstarted).debug();
 		assert.strictEqual(unstarted.debugSessions.length, 1);

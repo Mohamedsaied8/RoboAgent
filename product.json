@@ -94,20 +94,99 @@
 			}
 		},
 		{
-			"name": "ms-vscode.cpptools",
-			"version": "1.32.2",
-			"sha256": "2931836d7fd3d41868631123a8f98f4c0932363183115d40a389cc2211e91b2b",
-			"repo": "https://github.com/microsoft/vscode-cpptools",
-			"vsix": ".build/extensions/cpptools-linux-x64.vsix",
+			"name": "llvm-vs-code-extensions.vscode-clangd",
+			"version": "0.6.0",
+			"sha256": "32030694fa6c0ef438f4e4219f84677cd32f603c7faa4c71a283efc1f5b51751",
+			"repo": "https://github.com/clangd/vscode-clangd",
 			"metadata": {
-				"id": "690b692e-e8a9-493f-b802-8f3f7aae4a03",
+				"id": "103154cb-b81d-4e1b-8281-c5f4fa563d37",
 				"publisherId": {
-					"publisherId": "5f5636e7-69ed-4afe-b5d6-8d231fb3d3ee",
-					"publisherName": "ms-vscode",
-					"displayName": "Microsoft",
-					"flags": "verified"
+					"publisherId": "0f47d2a3-0735-453c-a89e-dc4193d6b6fa",
+					"publisherName": "llvm-vs-code-extensions",
+					"displayName": "llvm-vs-code-extensions",
+					"flags": ""
 				},
-				"publisherDisplayName": "Microsoft"
+				"publisherDisplayName": "llvm-vs-code-extensions"
+			}
+		},
+		{
+			"name": "marus25.cortex-debug",
+			"version": "1.12.1",
+			"sha256": "f315306b5d964c1e40d2802fdf8aa2ec86c62c0a73477d46964666a8381da71f",
+			"repo": "https://github.com/Marus/cortex-debug",
+			"metadata": {
+				"id": "2fd8abff-b3ce-46c9-a6a8-92d5ad69d8d0",
+				"publisherId": {
+					"publisherId": "1939ec22-e6b4-4ca1-acfb-e85b9527affb",
+					"publisherName": "marus25",
+					"displayName": "marus25",
+					"flags": ""
+				},
+				"publisherDisplayName": "marus25"
+			}
+		},
+		{
+			"name": "mcu-debug.debug-tracker-vscode",
+			"version": "0.0.15",
+			"sha256": "0bf99ffb60dc82d8d2e5f27a64dde7b54fc292236902edaaefccdbb1675bfd3e",
+			"repo": "https://github.com/mcu-debug/debug-tracker-vscode",
+			"metadata": {
+				"id": "bd8507f9-4b21-4877-b045-1f20471fe96e",
+				"publisherId": {
+					"publisherId": "01a12001-4273-713b-816a-83c5188b5714",
+					"publisherName": "mcu-debug",
+					"displayName": "MCU Debug",
+					"flags": ""
+				},
+				"publisherDisplayName": "MCU Debug"
+			}
+		},
+		{
+			"name": "mcu-debug.memory-view",
+			"version": "0.0.29",
+			"sha256": "3a874aa4f88481f56edc83fd8116525f8e589c00f0f57f6bb16a6304a11932bd",
+			"repo": "https://github.com/mcu-debug/memview",
+			"metadata": {
+				"id": "f319e29a-19e8-43fb-8e3e-e264b6144083",
+				"publisherId": {
+					"publisherId": "01a12001-4273-713b-816a-83c5188b5714",
+					"publisherName": "mcu-debug",
+					"displayName": "MCU Debug",
+					"flags": ""
+				},
+				"publisherDisplayName": "MCU Debug"
+			}
+		},
+		{
+			"name": "mcu-debug.rtos-views",
+			"version": "0.0.18",
+			"sha256": "1f7ba752c4dad5b58898ae9bd077a9876d88a23384966553174755a2747151e7",
+			"repo": "https://github.com/mcu-debug/rtos-views",
+			"metadata": {
+				"id": "0b85f1d6-1d95-4f57-bacd-ca639159f71d",
+				"publisherId": {
+					"publisherId": "01a12001-4273-713b-816a-83c5188b5714",
+					"publisherName": "mcu-debug",
+					"displayName": "MCU Debug",
+					"flags": ""
+				},
+				"publisherDisplayName": "MCU Debug"
+			}
+		},
+		{
+			"name": "mcu-debug.peripheral-viewer",
+			"version": "1.6.5",
+			"sha256": "552b152466ea1156c7d18f316efa8ce311cd745ae5e43d7b21d033d616f186f6",
+			"repo": "https://github.com/mcu-debug/peripheral-viewer",
+			"metadata": {
+				"id": "e6f326b2-3602-4e64-9cd1-ebe454be1992",
+				"publisherId": {
+					"publisherId": "01a12001-4273-713b-816a-83c5188b5714",
+					"publisherName": "mcu-debug",
+					"displayName": "MCU Debug",
+					"flags": ""
+				},
+				"publisherDisplayName": "MCU Debug"
 			}
 		},
 		{

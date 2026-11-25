@@ -329,6 +329,9 @@
 			}
 		],
 		"configurationDefaults": {
+			"clangd.arguments": [
+				"--query-driver=/usr/bin/arm-none-eabi-*,/usr/local/bin/arm-none-eabi-*,/opt/*/bin/arm-none-eabi-*,/opt/st/stm32cubeide_*/plugins/*/tools/bin/arm-none-eabi-*,${userHome}/.local/share/roboagent/tools/xpack-arm-none-eabi-gcc/*/*/bin/arm-none-eabi-*,${userHome}/.espressif/tools/*-esp*-elf/*/*-esp*-elf/bin/*-esp*-elf-*"
+			],
 			"cmake.configureOnOpen": false,
 			"cmake.enableAutomaticKitScan": false,
 			"cmake.options.advanced": {

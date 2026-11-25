@@ -8,11 +8,12 @@
  *
  *  Emits the canonical ESP-IDF layout (`CMakeLists.txt` including project.cmake, `main/`
  *  component, `sdkconfig.defaults` pinning CONFIG_IDF_TARGET) plus .vscode files for the
- *  bundled ESP-IDF extension and cpptools. The sdkconfig.defaults makes the first `idf.py build`
+ *  bundled ESP-IDF extension and clangd. The sdkconfig.defaults makes the first `idf.py build`
  *  pick the chip, so Create does not need to run `idf.py set-target`.
  *--------------------------------------------------------------------------------------------*/
 
 import { FileSet, jsonFile, toIdentifier } from '../scaffold';
+import { ESP_QUERY_DRIVERS, queryDriverArgument } from '../clangd';
 
 export type Esp32Chip = 'esp32' | 'esp32s2' | 'esp32s3' | 'esp32c3' | 'esp32c6' | 'esp32h2';
 
@@ -66,19 +67,10 @@ CONFIG_IDF_TARGET="${spec.chip}"
 		// overrides sdkconfig.defaults: pin the chip for it as well.
 		'idf.customExtraVars': { IDF_TARGET: spec.chip },
 		'files.associations': { 'sdkconfig': 'ini', 'sdkconfig.defaults': 'ini' },
-		'C_Cpp.default.compileCommands': '${workspaceFolder}/build/compile_commands.json',
-		'C_Cpp.default.compilerPath': '',
-	}));
-	files.set('.vscode/c_cpp_properties.json', jsonFile({
-		version: 4,
-		configurations: [{
-			name: 'ESP-IDF',
-			compileCommands: '${workspaceFolder}/build/compile_commands.json',
-			includePath: ['${workspaceFolder}/**', '${env:IDF_PATH}/components/**'],
-			cStandard: 'c17',
-			cppStandard: 'c++20',
-			intelliSenseMode: 'linux-gcc-x86',
-		}],
+		// clangd (IntelliSense) reads build/compile_commands.json and may ask only the Espressif GCCs
+		// in their install folders for their system headers (see ../clangd.ts). The ESP-IDF
+		// extension rewrites these clangd settings when it configures a project with esp-clang.
+		'clangd.arguments': [queryDriverArgument(ESP_QUERY_DRIVERS)],
 	}));
 	files.set('.vscode/launch.json', jsonFile({
 		version: '0.2.0',

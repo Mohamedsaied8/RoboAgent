@@ -5,8 +5,8 @@
 
 /*---------------------------------------------------------------------------------------------
  *  RoboAgent — STM32 mode: Create (wizard → CMake/Makefile project), Build (CMake configure +
- *  make, or the project's Makefile, with the gcc problem matcher), Debug (Cortex-Debug →
- *  cpptools/OpenOCD fallback). Build and Debug act on the STM32 project holding the active file,
+ *  make, or the project's Makefile, with the gcc problem matcher), Debug (Cortex-Debug + OpenOCD,
+ *  bundled with RoboAgent). Build and Debug act on the STM32 project holding the active file,
  *  which may sit below the workspace folder (an STM32CubeIDE workspace). All three first make
  *  sure the tools they need are installed (`ensureToolchain.ts`) and offer to install them when
  *  they are not.
@@ -23,7 +23,7 @@ import { materialize, ScaffoldError, toIdentifier } from '../scaffold';
 import { BACK, inputStep, pickFolder, pickOrTypeStep, pickStep, StepResult, validateProjectName } from '../wizardSteps';
 import { CmsisIo, installCmsisIntoProject, nodeCmsisIo } from './cmsis';
 import { ensureStm32Toolchain } from './ensureToolchain';
-import { describeOpenOcdFailure, generateStm32Project, openocdArgs, shellQuote, stm32BuildCommands, Stm32ProjectKind, Stm32ProjectSpec, stm32LaunchConfigurations, Stm32Toolchain } from './generator';
+import { describeOpenOcdFailure, generateStm32Project, openocdArgs, stm32BuildCommands, Stm32ProjectKind, Stm32ProjectSpec, stm32LaunchConfigurations, Stm32Toolchain } from './generator';
 import { isPlausiblePartNumber, ResolvedStm32Target, resolveTarget, STM32_FAMILIES, STM32_PARTS } from './mcuDatabase';
 import { findFirmwareImages, planStm32Build, readStm32Part } from './project';
 
@@ -297,7 +297,15 @@ export class Stm32ModeProvider implements ModeProvider {
 			await this.host.showWarning(vscode.l10n.t('This is an STM32 library project; debug an executable project that links it.'));
 			return;
 		}
-		// OpenOCD + a GDB are needed whichever debug adapter runs; the compiler is checked by Build below if needed.
+		// Cortex-Debug ships with RoboAgent; it is missing only when the user disabled (or removed) it.
+		// Checked first, before any toolchain or build prompt. A disabled built-in is re-enabled
+		// from the Extensions view; installing again would not enable it.
+		if (!this.host.isExtensionInstalled(CORTEX_DEBUG_EXTENSION_ID)) {
+			await this.host.showError(vscode.l10n.t('STM32 debugging needs the Cortex-Debug extension, which is disabled.'),
+				{ title: vscode.l10n.t('Show Cortex-Debug'), run: async () => { await this.host.executeCommand('workbench.extensions.search', `@id:${CORTEX_DEBUG_EXTENSION_ID}`); } });
+			return;
+		}
+		// OpenOCD + a GDB are needed for the debug session; the compiler is checked by Build below if needed.
 		const { ready, tools } = await ensureStm32Toolchain(this.host, { silentIfPresent: true, purpose: 'debug' });
 		if (!ready) { return; }   // the user was offered the installer
 
@@ -328,29 +336,19 @@ export class Stm32ModeProvider implements ModeProvider {
 			openocdInterface = 'stlink-dap';
 		}
 		const spec: Stm32ProjectSpec = { name: path.basename(root), target, kind: 'executable', toolchain: plan?.buildSystem ?? 'cmake', openocdInterface };
-		const [cortex, cppdbg] = stm32LaunchConfigurations(spec, json.name ?? toIdentifier(path.basename(root)));
+		const [cortex] = stm32LaunchConfigurations(spec, json.name ?? toIdentifier(path.basename(root)));
 		// `${workspaceFolder}` only names the project when the project is the workspace folder.
 		const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(root))?.uri.fsPath;
 		const atFolderRoot = folder === root;
 		const executable = atFolderRoot ? '${workspaceFolder}/' + path.relative(root, elf).split(path.sep).join('/') : elf;
 		const cwd = atFolderRoot ? '${workspaceFolder}' : root;
 
-		let configuration: Record<string, unknown>;
-		if (this.host.isExtensionInstalled(CORTEX_DEBUG_EXTENSION_ID)) {
-			configuration = { ...cortex, executable, cwd, preLaunchTask: undefined };
-			// Cortex-Debug defaults to `arm-none-eabi-gdb` / `openocd` on PATH; point it at what was actually found.
-			if (tools.toolchainDir) { configuration['armToolchainPath'] = tools.toolchainDir; }
-			if (tools.gdbPath && tools.gdbPath !== 'arm-none-eabi-gdb' && path.dirname(tools.gdbPath) !== tools.toolchainDir) { configuration['gdbPath'] = tools.gdbPath; }
-			if (tools.openocdPath) { configuration['serverpath'] = tools.openocdPath; }
-			if (tools.openocdScriptsDir) { configuration['searchDir'] = [tools.openocdScriptsDir]; }
-		} else {
-			this.host.log(`STM32: Cortex-Debug not installed; using cpptools cppdbg + OpenOCD with ${tools.gdbPath}`);
-			const scripts = tools.openocdScriptsDir ? `-s ${shellQuote(tools.openocdScriptsDir)} ` : '';
-			configuration = {
-				...cppdbg, program: executable, cwd, preLaunchTask: undefined, miDebuggerPath: tools.gdbPath,
-				debugServerPath: tools.openocdPath ?? cppdbg['debugServerPath'], debugServerArgs: scripts + String(cppdbg['debugServerArgs']),
-			};
-		}
+		const configuration: Record<string, unknown> = { ...cortex, executable, cwd, preLaunchTask: undefined };
+		// Cortex-Debug defaults to `arm-none-eabi-gdb` / `openocd` on PATH; point it at what was actually found.
+		if (tools.toolchainDir) { configuration['armToolchainPath'] = tools.toolchainDir; }
+		if (tools.gdbPath && tools.gdbPath !== 'arm-none-eabi-gdb' && path.dirname(tools.gdbPath) !== tools.toolchainDir) { configuration['gdbPath'] = tools.gdbPath; }
+		if (tools.openocdPath) { configuration['serverpath'] = tools.openocdPath; }
+		if (tools.openocdScriptsDir) { configuration['searchDir'] = [tools.openocdScriptsDir]; }
 
 		// Without a reachable probe the debug adapter just ends silently; check first and say why.
 		const probeArgs = [...(tools.openocdScriptsDir ? ['-s', tools.openocdScriptsDir] : []), ...openocdArgs(spec), '-c', 'init; shutdown'];

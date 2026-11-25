@@ -123,17 +123,16 @@ Debug OpenOCD and GDB. When something is missing a notification lists it and off
 The same check runs on demand as *RoboAgent: STM32: Check Toolchain* (`roboagent.stm32.ensureToolchain`,
 palette in STM32 mode) and its result is logged at startup.
 
-**Debug** — launches the Cortex-Debug/OpenOCD configuration when Cortex-Debug is installed
-(with `armToolchainPath` / `gdbPath` set when the compiler is off `PATH` or only `gdb-multiarch`
-exists), else cpptools `cppdbg` against an OpenOCD GDB server with the GDB the check found. The
+**Debug** — launches the Cortex-Debug/OpenOCD configuration (Cortex-Debug ships with RoboAgent;
+`armToolchainPath` / `gdbPath` are set when the compiler is off `PATH` or only `gdb-multiarch`
+exists; a disabled Cortex-Debug is offered for reinstall). The
 image is the newest `.elf` under `build/`, `Debug/` or `Release/`; none → *Build now?* first. The
 OpenOCD target comes from the MCU in `.roboagent/project.json`, the `.ioc`, the `.cproject` or the
 linker script name. Interface script from `roboagent.stm32.openocdInterface` (`stlink` default,
 used as `stlink-dap` with STM32CubeIDE's OpenOCD, whose `-s` script folder is passed along). Before
 the session starts, `openocd … -c "init; shutdown"` checks the probe: no ST-Link, no USB permission,
 or no connection to the MCU is reported as an error (with *Retry* / *Show Log*) instead of a
-session that silently ends. Cortex-Debug is optional and never prompted for: install it
-from the palette (`roboagent.stm32.ensureExtension`) to use it instead of the bundled C/C++ debugger.
+session that silently ends.
 
 ## ESP32 mode
 

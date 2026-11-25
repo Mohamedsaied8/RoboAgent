@@ -8,9 +8,9 @@
  *
  *  ST's "STM32CubeIDE for VS Code" is under SLA0048 and only on the Microsoft Marketplace, so
  *  it can neither be bundled nor fetched from RoboAgent's gallery (Open VSX) — see
- *  docs/extensions.md. What CAN be installed is the open-source debug stack: Cortex-Debug (MIT),
- *  which pulls its mcu-debug.* dependencies from Open VSX. It is optional (STM32 Debug falls back
- *  to the bundled cpptools debugger) and runs only on demand from the palette.
+ *  docs/extensions.md. The open-source debug stack, Cortex-Debug (MIT) with its mcu-debug.*
+ *  dependencies, ships with RoboAgent as built-ins; this command reinstalls it from Open VSX if it
+ *  was removed, and runs only on demand from the palette.
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';

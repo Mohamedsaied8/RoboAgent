@@ -22,10 +22,14 @@ code + security reviews by fresh-context agents, findings fixed and re-reviewed:
 | A4 | Sign-in redirected to a 127.0.0.1 server; Cancel did nothing; progress toast never closed | `roboagent://auth/callback` only (`BrowserSignIn`: state checked first, forged callbacks ignored), handler registered before window handlers, Linux registers the scheme itself (`urlSchemeRegistration.ts`), working Cancel | ☑ (verified end to end) |
 | A5 | Chat asked to sign in again after restart: the app pointed at a Supabase project that no longer exists | Live project URL + publishable key | ☑ |
 | A6 | Build / Debug three times (title bar, editor title, CMake Tools status bar); CMake Tools kit picker on open; ESP-IDF button in STM32 mode | Title-bar toolbar only; CMake Tools defaults; `espIdf.searchError` gated on ESP32 mode | ☑ |
-| A7 | STM32 Create makes no CMSIS headers (`stm32f1xx.h` missing) | Download ST's CMSIS device + core packs at Create (pinned, SHA-256) — decided 2026-11-25 | ☐ |
-| A8 | Microsoft C/C++ extension license notice in a fork | Replace with clangd + Cortex-Debug — decided 2026-11-25 | ☐ |
-| A9 | ESP-IDF extension asks "activate anyway?" in non-ESP32 projects | Keep it inactive outside ESP32 projects — decided 2026-11-25 | ☐ |
+| A7 | STM32 Create makes no CMSIS headers (`stm32f1xx.h` missing) | `cmsis.ts`: ST's cmsis-core + cmsis-device-<family> downloaded at Create (pinned tag + SHA-256), real startup + system_*.c; *STM32: Add CMSIS Headers* for existing projects. All 13 families build with register code | ☑ |
+| A8 | Microsoft C/C++ extension license notice in a fork | cpptools no longer shipped; clangd + Cortex-Debug (+ 4 mcu-debug deps, all MIT) bundled; clangd config in generated projects with a `--query-driver` allow-list (no `**`). clangd *server* install not verified here (GitHub API rate-limited on this machine) | ☑ |
+| A9 | ESP-IDF extension asks "activate anyway?" in non-ESP32 projects | Activation narrowed to ESP-IDF markers (`roboagentActivationOverrides.ts`); CMake Tools kit scan off | ☑ |
 | A10 | Minor: wizard Location step unnumbered; "Not indexed" (ROS2 index) shown in STM32 mode; chat sends no workspace context | — | ☐ |
+| A11 | H7 linker stub puts all RAM at 0x20000000 (only 128 KB DTCM there): invalid initial stack on real H7 parts | Per-part memory map in the MCU catalog | ☐ |
+| A12 | `npm run valid-layers-check` fails: `IMainProcessService` used from `browser/` (roboagentAuthCommands.ts, sessions account.contribution.ts) | Move to electron-browser or go through a proper service | ☐ |
+| A14 | ROS2 C++ IntelliSense with clangd: colcon does not export compile_commands.json per workspace | `--cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON` + merge into build/compile_commands.json | ☐ |
+| A13 | `roboagentAuthMainService.test.ts` cannot load in the unit runner (imports electron-main modules), which aborts a full `--grep roboagent` run | Test through the pure modules (done for the sign-in flow) and drop or fix that file | ☐ |
 
 ---
 

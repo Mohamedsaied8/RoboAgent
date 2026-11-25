@@ -9,10 +9,11 @@
  *  Emits a self-contained CMake (or Makefile) project for arm-none-eabi-gcc with the correct
  *  -mcpu / -mfpu / -mfloat-abi flags for the chosen core, a linker-script stub sized from the
  *  MCU database, a startup placeholder, `Core/Src/main.c`, and the .vscode files that make
- *  IntelliSense, tasks and debugging (Cortex-Debug or cpptools+OpenOCD) work out of the box.
+ *  IntelliSense (clangd), tasks and debugging (Cortex-Debug + OpenOCD) work out of the box.
  *  Libraries get `add_library(... STATIC ...)` and no main/linker/startup.
  *--------------------------------------------------------------------------------------------*/
 
+import { ARM_QUERY_DRIVERS, queryDriverArgument } from '../clangd';
 import { FileSet, jsonFile, toIdentifier } from '../scaffold';
 import { cpuFlags, ResolvedStm32Target } from './mcuDatabase';
 
@@ -53,12 +54,18 @@ export function generateStm32Project(spec: Stm32ProjectSpec): FileSet {
 		files.set(`Src/${id}.c`, librarySource(id));
 	}
 
-	files.set('.vscode/c_cpp_properties.json', cCppProperties(spec, t));
+	if (spec.toolchain === 'make') {
+		// clangd (IntelliSense): CMake projects export build/compile_commands.json; a Makefile project gets the flags here.
+		files.set('compile_flags.txt', compileFlags(spec, t));
+		// Without this, clangd treats compile_flags.txt as clang commands and never asks the Arm GCC
+		// for newlib's headers (<stdint.h>, <string.h>…); the query-driver allow-list still applies.
+		files.set('.clangd', 'CompileFlags:\n  Compiler: arm-none-eabi-gcc\n');
+	}
 	files.set('.vscode/tasks.json', tasksJson(spec, id));
 	if (isExe) {
 		files.set('.vscode/launch.json', launchJson(spec, id));
 	}
-	files.set('.vscode/settings.json', jsonFile({ 'roboagent.mode': 'stm32', 'files.associations': { '*.h': 'c' }, 'C_Cpp.default.configurationProvider': '' }));
+	files.set('.vscode/settings.json', jsonFile({ 'roboagent.mode': 'stm32', 'files.associations': { '*.h': 'c' }, 'clangd.arguments': STM32_CLANGD_ARGUMENTS }));
 	files.set('.gitignore', 'build/\n*.elf\n*.bin\n*.hex\n*.map\n');
 	files.set('README.md', readme(spec, id));
 	files.set('.roboagent/project.json', jsonFile({ controlLevel: 'low', target: 'stm32', name: id, part: t.part, kind: spec.kind, toolchain: spec.toolchain, createdWith: 'roboagent-mode-stm32' }));
@@ -464,22 +471,18 @@ uint32_t ${id}_tick(void)
 
 // --- .vscode ----------------------------------------------------------------
 
-function cCppProperties(spec: Stm32ProjectSpec, t: ResolvedStm32Target): string {
-	const isExe = spec.kind === 'executable';
-	return jsonFile({
-		version: 4,
-		configurations: [{
-			name: 'STM32',
-			compilerPath: 'arm-none-eabi-gcc',
-			compilerArgs: cpuFlags(t),
-			includePath: isExe ? ['${workspaceFolder}/Core/Inc', '${workspaceFolder}/Drivers/**'] : ['${workspaceFolder}/Inc'],
-			defines: [t.define],
-			cStandard: 'c11',
-			cppStandard: 'c++17',
-			intelliSenseMode: 'linux-gcc-arm',
-			...(spec.toolchain === 'cmake' ? { compileCommands: '${workspaceFolder}/build/compile_commands.json' } : {}),
-		}],
-	});
+/**
+ * clangd arguments for STM32 projects: which Arm GCCs it may run for their system headers (see
+ * ../clangd.ts). clangd finds build/compile_commands.json (CMake) on its own.
+ */
+export const STM32_CLANGD_ARGUMENTS: readonly string[] = [queryDriverArgument(ARM_QUERY_DRIVERS)];
+
+/** clangd flags for a Makefile project (no compile_commands.json): the same defines and include folders as the Makefile. */
+function compileFlags(spec: Stm32ProjectSpec, t: ResolvedStm32Target): string {
+	const includes = spec.kind === 'executable'
+		? ['-ICore/Inc', '-IDrivers/CMSIS/Include', `-IDrivers/CMSIS/Device/ST/STM32${t.family.id}xx/Include`]
+		: ['-IInc'];
+	return ['--target=arm-none-eabi', ...cpuFlags(t), `-D${t.define}`, ...includes, '-std=gnu11', ''].join('\n');
 }
 
 /** How an existing project is built, beyond its build system (see `project.ts`). */
@@ -563,7 +566,7 @@ function tasksJson(spec: Stm32ProjectSpec, id: string): string {
 	return jsonFile({ version: '2.0.0', tasks });
 }
 
-/** Debug configurations: Cortex-Debug first (installed on first use), cpptools+OpenOCD as the fallback. */
+/** Debug configuration: Cortex-Debug (bundled) with OpenOCD. */
 export function stm32LaunchConfigurations(spec: Stm32ProjectSpec, id: string): Record<string, unknown>[] {
 	const elf = '${workspaceFolder}/' + elfPath(spec, id);
 	const ocd = openocdArgs(spec);
@@ -578,28 +581,6 @@ export function stm32LaunchConfigurations(spec: Stm32ProjectSpec, id: string): R
 			device: spec.target.part,
 			configFiles: [ocd[1], ocd[3]],
 			runToEntryPoint: 'main',
-			preLaunchTask: 'STM32: Build',
-		},
-		{
-			name: 'STM32: Debug (cpptools + OpenOCD GDB server)',
-			type: 'cppdbg',
-			request: 'launch',
-			cwd: '${workspaceFolder}',
-			program: elf,
-			MIMode: 'gdb',
-			miDebuggerPath: 'arm-none-eabi-gdb',
-			miDebuggerServerAddress: 'localhost:3333',
-			debugServerPath: 'openocd',
-			debugServerArgs: ocd.join(' '),
-			filterStderr: true,
-			serverStarted: 'Listening on port 3333 for gdb connections',
-			// Run once GDB is connected to OpenOCD; `setupCommands` run before `target remote`, where
-			// `monitor` is not available yet.
-			postRemoteConnectCommands: [
-				{ text: 'monitor reset halt' },
-				{ text: 'load' },
-				{ text: 'monitor reset halt' },
-			],
 			preLaunchTask: 'STM32: Build',
 		},
 	];
@@ -635,7 +616,7 @@ Or press **Build** in the RoboAgent toolbar (Mode: STM32). Set \`roboagent.stm32
 ${spec.kind === 'executable' ? `## Flash & debug
 
 - **Debug** in the toolbar starts the \`STM32: Debug (Cortex-Debug / OpenOCD)\` configuration (interface \`${spec.openocdInterface}\`,
-  target \`${t.family.openocdTarget}\`). Without Cortex-Debug, the cpptools + OpenOCD configuration is used.
+  target \`${t.family.openocdTarget}\`).
 - Task **STM32: Flash (OpenOCD)** programs \`${elfPath(spec, id)}\`.
 
 ## Next steps

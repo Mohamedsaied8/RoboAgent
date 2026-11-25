@@ -6,6 +6,7 @@
 import * as assert from 'assert';
 import { describeOpenOcdFailure, generateStm32Project, stm32BuildCommands, stm32LaunchConfigurations, Stm32ProjectSpec } from '../modes/stm32/generator';
 import { resolveTarget } from '../modes/stm32/mcuDatabase';
+import { ARM_QUERY_DRIVERS, queryDriverArgument } from '../modes/clangd';
 
 function spec(overrides: Partial<Stm32ProjectSpec> = {}): Stm32ProjectSpec {
 	return { name: 'motor-ctrl', target: resolveTarget('STM32H743ZIT6'), kind: 'executable', toolchain: 'cmake', openocdInterface: 'stlink', ...overrides };
@@ -31,7 +32,11 @@ suite('STM32 generator', () => {
 		const ld = files.get('STM32H743ZIT6_FLASH.ld')!;
 		assert.ok(ld.includes('FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 2048K'));
 		assert.ok(ld.includes('LENGTH = 1024K'));
-		assert.ok(files.has('.vscode/launch.json') && files.has('.vscode/tasks.json') && files.has('.vscode/c_cpp_properties.json'));
+		assert.ok(files.has('.vscode/launch.json') && files.has('.vscode/tasks.json'));
+		// IntelliSense is clangd (cpptools is not shipped): no c_cpp_properties.json, clangd reads build/compile_commands.json
+		// and may run only Arm GCCs from toolchain install folders.
+		assert.ok(!files.has('.vscode/c_cpp_properties.json'));
+		assert.deepStrictEqual(JSON.parse(files.get('.vscode/settings.json')!)['clangd.arguments'], [queryDriverArgument(ARM_QUERY_DRIVERS)]);
 		assert.ok(files.get('.roboagent/project.json')!.includes('"part": "STM32H743ZIT6"'));
 	});
 
@@ -55,6 +60,9 @@ suite('STM32 generator', () => {
 		assert.ok(mk.includes('MCU_FLAGS  := -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard'));
 		assert.ok(mk.includes('-DSTM32F407xx'));
 		assert.ok(mk.includes('$(BUILD_DIR)/$(TARGET).elf'));
+		// No compile_commands.json from make: clangd gets the same flags from compile_flags.txt.
+		assert.strictEqual(files.get('.clangd'), 'CompileFlags:\n  Compiler: arm-none-eabi-gcc\n', 'so clangd asks the Arm GCC for newlib headers');
+		assert.deepStrictEqual(files.get('compile_flags.txt')!.trim().split('\n'), ['--target=arm-none-eabi', '-mcpu=cortex-m4', '-mthumb', '-mfpu=fpv4-sp-d16', '-mfloat-abi=hard', '-DSTM32F407xx', '-ICore/Inc', '-IDrivers/CMSIS/Include', '-IDrivers/CMSIS/Device/ST/STM32F4xx/Include', '-std=gnu11']);
 	});
 
 	test('unknown part is flagged in the linker script and README', () => {
@@ -87,22 +95,19 @@ suite('STM32 generator', () => {
 		assert.strictEqual(describeOpenOcdFailure('Error: something odd\n'), 'OpenOCD could not connect to the target: Error: something odd');
 	});
 
-	test('launch configurations: Cortex-Debug first, cpptools + OpenOCD fallback, matching OpenOCD scripts', () => {
-		const [cortex, cppdbg] = stm32LaunchConfigurations(spec({ openocdInterface: 'jlink' }), 'motor_ctrl');
+	test('launch configuration: Cortex-Debug with the matching OpenOCD scripts (no cpptools fallback)', () => {
+		const configurations = stm32LaunchConfigurations(spec({ openocdInterface: 'jlink' }), 'motor_ctrl');
+		assert.strictEqual(configurations.length, 1);
+		const [cortex] = configurations;
 		assert.strictEqual(cortex.type, 'cortex-debug');
 		assert.strictEqual(cortex.servertype, 'openocd');
 		assert.deepStrictEqual(cortex.configFiles, ['interface/jlink.cfg', 'target/stm32h7x.cfg']);
 		assert.strictEqual(cortex.executable, '${workspaceFolder}/build/motor_ctrl.elf');
-		assert.strictEqual(cppdbg.type, 'cppdbg');
-		assert.strictEqual(cppdbg.miDebuggerPath, 'arm-none-eabi-gdb');
-		assert.strictEqual(cppdbg.debugServerArgs, '-f interface/jlink.cfg -f target/stm32h7x.cfg');
-		assert.strictEqual(cppdbg.setupCommands, undefined, 'monitor commands fail before GDB is connected');
-		assert.deepStrictEqual(cppdbg.postRemoteConnectCommands, [{ text: 'monitor reset halt' }, { text: 'load' }, { text: 'monitor reset halt' }]);
 	});
 
 	test('generated JSON is valid', () => {
 		const files = generateStm32Project(spec());
-		for (const name of ['.vscode/launch.json', '.vscode/tasks.json', '.vscode/c_cpp_properties.json', '.vscode/settings.json', '.roboagent/project.json']) {
+		for (const name of ['.vscode/launch.json', '.vscode/tasks.json', '.vscode/settings.json', '.roboagent/project.json']) {
 			assert.doesNotThrow(() => JSON.parse(files.get(name)!), name);
 		}
 	});
