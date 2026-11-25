@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as assert from 'assert';
-import { generateStm32Project, stm32BuildCommands, stm32LaunchConfigurations, Stm32ProjectSpec } from '../modes/stm32/generator';
+import { describeOpenOcdFailure, generateStm32Project, stm32BuildCommands, stm32LaunchConfigurations, Stm32ProjectSpec } from '../modes/stm32/generator';
 import { resolveTarget } from '../modes/stm32/mcuDatabase';
 
 function spec(overrides: Partial<Stm32ProjectSpec> = {}): Stm32ProjectSpec {
@@ -59,14 +59,28 @@ suite('STM32 generator', () => {
 		assert.ok(files.get('README.md')!.includes('part not in catalog'));
 	});
 
-	test('build commands: cmake vs make, with a quoted toolchain path', () => {
+	test('build commands: CMake configure + make, a kept generator, plain make, with a quoted toolchain path', () => {
 		assert.deepStrictEqual(stm32BuildCommands('cmake'), {
+			configure: `cmake -S . -B build -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Debug`,
+			build: `cmake -S . -B build -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Debug && make -C build -j`,
+			clean: 'make -C build clean',
+		});
+		assert.strictEqual(stm32BuildCommands('cmake', '/opt/gcc arm/bin').build, `cmake -S . -B build -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Debug -DTOOLCHAIN_PATH='/opt/gcc arm/bin' && make -C build -j`);
+		assert.strictEqual(stm32BuildCommands('cmake', undefined, { toolchainFile: 'cubeide-gcc.cmake', cachedGenerator: 'Unix Makefiles' }).build, `cmake -S . -B build -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=cubeide-gcc.cmake && make -C build -j`);
+		assert.deepStrictEqual(stm32BuildCommands('cmake', undefined, { cachedGenerator: 'Ninja' }), {
 			configure: 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug',
 			build: 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build --parallel',
 			clean: 'cmake --build build --target clean',
 		});
-		assert.strictEqual(stm32BuildCommands('cmake', '/opt/gcc arm/bin').build, `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DTOOLCHAIN_PATH='/opt/gcc arm/bin' && cmake --build build --parallel`);
 		assert.strictEqual(stm32BuildCommands('make', '/opt/arm/bin').build, 'make -j TOOLCHAIN_PATH=/opt/arm/bin');
+		assert.deepStrictEqual(stm32BuildCommands('make', undefined, { makeDirectory: 'Debug' }), { build: 'make -C Debug -j all', clean: 'make -C Debug clean' });
+	});
+
+	test('OpenOCD probe failures are explained', () => {
+		assert.ok(describeOpenOcdFailure('Info : auto-selecting first available session transport "dapdirect_swd".\nError: open failed\n').startsWith('No debug probe found.'));
+		assert.ok(describeOpenOcdFailure('Error: libusb_open() failed with LIBUSB_ERROR_ACCESS\nError: open failed').includes('USB permission denied'));
+		assert.ok(describeOpenOcdFailure('Info : Target voltage: 0.0\nError: init mode failed (unable to connect to the target)').includes('could not connect to the MCU'));
+		assert.strictEqual(describeOpenOcdFailure('Error: something odd\n'), 'OpenOCD could not connect to the target: Error: something odd');
 	});
 
 	test('launch configurations: Cortex-Debug first, cpptools + OpenOCD fallback, matching OpenOCD scripts', () => {
@@ -78,6 +92,8 @@ suite('STM32 generator', () => {
 		assert.strictEqual(cppdbg.type, 'cppdbg');
 		assert.strictEqual(cppdbg.miDebuggerPath, 'arm-none-eabi-gdb');
 		assert.strictEqual(cppdbg.debugServerArgs, '-f interface/jlink.cfg -f target/stm32h7x.cfg');
+		assert.strictEqual(cppdbg.setupCommands, undefined, 'monitor commands fail before GDB is connected');
+		assert.deepStrictEqual(cppdbg.postRemoteConnectCommands, [{ text: 'monitor reset halt' }, { text: 'load' }, { text: 'monitor reset halt' }]);
 	});
 
 	test('generated JSON is valid', () => {

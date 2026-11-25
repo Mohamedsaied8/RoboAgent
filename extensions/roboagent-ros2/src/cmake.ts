@@ -10,14 +10,29 @@
  *  CMake configure/build/run/clean tasks, a g++ single-file build task, active-file build/run
  *  commands, editor-title buttons, and status-bar buttons for CMake projects. ROS2/colcon build
  *  lives in colconTasks.ts; this file is deliberately ROS2-agnostic.
+ *
+ *  In the firmware modes (STM32 / ESP32) a host-compiled single file or `${workspaceFolder}/build`
+ *  is meaningless: the build/run commands forward to the mode's project Build / Debug instead,
+ *  and the host-only status-bar buttons are hidden.
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { Mode } from './modes/modeProvider';
 
 const CPP_TASK_TYPE = 'roboagent-cpp';
 const CMAKE_TASK_TYPE = 'roboagent-cmake';
+
+/** What the build/run buttons need to know about the RoboAgent Mode (the ModeService). */
+export interface ModeState {
+	readonly mode: Mode;
+	readonly onDidChangeMode: vscode.Event<Mode>;
+}
+
+function isFirmwareMode(modes: ModeState): boolean {
+	return modes.mode === 'stm32' || modes.mode === 'esp32';
+}
 
 export function isCMakeProject(): boolean {
 	return (vscode.workspace.workspaceFolders ?? [])
@@ -79,7 +94,11 @@ async function runTaskByName(name: string, type: string): Promise<void> {
 
 // --- Commands --------------------------------------------------------------
 
-async function buildFile(): Promise<void> {
+async function buildFile(modes: ModeState): Promise<void> {
+	if (isFirmwareMode(modes)) {
+		await vscode.commands.executeCommand('roboagent.build');
+		return;
+	}
 	const editor = vscode.window.activeTextEditor;
 	if (!editor) { return; }
 	const lang = editor.document.languageId;
@@ -92,10 +111,15 @@ async function buildFile(): Promise<void> {
 	}
 }
 
-function runFile(): void {
+function runFile(modes: ModeState): void {
 	const editor = vscode.window.activeTextEditor;
 	if (!editor) { return; }
 	const lang = editor.document.languageId;
+	if (isFirmwareMode(modes) && lang !== 'python') {
+		// Firmware cannot run on the host: build it if needed, flash it and start the debugger.
+		void vscode.commands.executeCommand('roboagent.debug');
+		return;
+	}
 	if ((lang === 'cpp' || lang === 'c') && isCMakeProject()) {
 		void runTaskByName('CMake build & run', CMAKE_TASK_TYPE);
 	} else if (lang === 'cpp' || lang === 'c') {
@@ -115,7 +139,7 @@ function runFile(): void {
 // --- Status bar (CMake project buttons + generic Run File) -----------------
 
 /** Create the status-bar buttons; returns the refresher that shows/hides the CMake set. */
-function createStatusBarItems(context: vscode.ExtensionContext): () => void {
+function createStatusBarItems(context: vscode.ExtensionContext, modes: ModeState): () => void {
 	const add = (priority: number, text: string, tooltip: string, command: string, color?: string) => {
 		const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, priority);
 		item.text = text; item.tooltip = tooltip; item.command = command;
@@ -131,25 +155,28 @@ function createStatusBarItems(context: vscode.ExtensionContext): () => void {
 		add(87, '$(trash) Clean', 'RoboAgent: CMake Clean', 'roboagent.cmakeClean'),
 	];
 	const updateCMakeButtons = () => {
-		const show = isCMakeProject();
+		const show = isCMakeProject() && !isFirmwareMode(modes);
 		cmakeItems.forEach(item => show ? item.show() : item.hide());
 	};
 
 	const runFileBtn = add(86, '$(play) Run File', 'RoboAgent: Build & Run active file', 'roboagent.runFile', '#4EC9B0');
 	const updateRunFileVisibility = () => {
 		const lang = vscode.window.activeTextEditor?.document.languageId;
-		if (lang && ['cpp', 'c', 'python', 'cmake'].includes(lang)) { runFileBtn.show(); } else { runFileBtn.hide(); }
+		if (lang && ['cpp', 'c', 'python', 'cmake'].includes(lang) && !isFirmwareMode(modes)) { runFileBtn.show(); } else { runFileBtn.hide(); }
 	};
 	updateCMakeButtons();
 	updateRunFileVisibility();
-	context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(updateRunFileVisibility));
+	context.subscriptions.push(
+		vscode.window.onDidChangeActiveTextEditor(updateRunFileVisibility),
+		modes.onDidChangeMode(() => { updateCMakeButtons(); updateRunFileVisibility(); }),
+	);
 	return updateCMakeButtons;
 }
 
 // --- Registration ----------------------------------------------------------
 
-export function registerCmake(context: vscode.ExtensionContext): void {
-	const updateCMakeButtons = createStatusBarItems(context);
+export function registerCmake(context: vscode.ExtensionContext, modes: ModeState): void {
+	const updateCMakeButtons = createStatusBarItems(context, modes);
 	const refresh = () => {
 		void vscode.commands.executeCommand('setContext', 'roboagent.isCMakeProject', isCMakeProject());
 		updateCMakeButtons();
@@ -163,11 +190,11 @@ export function registerCmake(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(
 		vscode.tasks.registerTaskProvider(CPP_TASK_TYPE, new CppTaskProvider()),
 		vscode.tasks.registerTaskProvider(CMAKE_TASK_TYPE, new CMakeTaskProvider()),
-		vscode.commands.registerCommand('roboagent.buildFile', buildFile),
-		vscode.commands.registerCommand('roboagent.runFile', runFile),
+		vscode.commands.registerCommand('roboagent.buildFile', () => buildFile(modes)),
+		vscode.commands.registerCommand('roboagent.runFile', () => runFile(modes)),
 		vscode.commands.registerCommand('roboagent.cmakeConfigure', () => runTaskByName('CMake configure', CMAKE_TASK_TYPE)),
-		vscode.commands.registerCommand('roboagent.cmakeBuild', () => runTaskByName('CMake build', CMAKE_TASK_TYPE)),
-		vscode.commands.registerCommand('roboagent.cmakeRun', () => runTaskByName('CMake build & run', CMAKE_TASK_TYPE)),
+		vscode.commands.registerCommand('roboagent.cmakeBuild', () => isFirmwareMode(modes) ? vscode.commands.executeCommand('roboagent.build') : runTaskByName('CMake build', CMAKE_TASK_TYPE)),
+		vscode.commands.registerCommand('roboagent.cmakeRun', () => isFirmwareMode(modes) ? vscode.commands.executeCommand('roboagent.debug') : runTaskByName('CMake build & run', CMAKE_TASK_TYPE)),
 		vscode.commands.registerCommand('roboagent.cmakeClean', () => runTaskByName('CMake clean', CMAKE_TASK_TYPE)),
 		vscode.workspace.onDidChangeWorkspaceFolders(refresh),
 		watcher,

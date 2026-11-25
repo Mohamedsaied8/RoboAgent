@@ -3,10 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import * as cp from 'child_process';
 import * as vscode from 'vscode';
 import { exists, onPath } from '../util';
-import { MessageAction, ModeHost, ShellTaskRequest, TaskResult } from './modeHost';
-import { log } from './output';
+import { MessageAction, ModeHost, ProcessResult, ShellTaskRequest, TaskResult } from './modeHost';
+import { getOutputChannel, log } from './output';
+import { discoverStm32CubeIdeInstalls } from './toolchains';
 import { pickFolder } from './wizardSteps';
 
 /** The production {@link ModeHost}: thin adapters over the vscode API. */
@@ -37,6 +39,18 @@ export class VscodeModeHost implements ModeHost {
 			return { exitCode: undefined };
 		}
 		return done;
+	}
+
+	runProcess(command: string, args: readonly string[], timeoutMs: number): Promise<ProcessResult> {
+		return new Promise(resolve => {
+			let output = '';
+			const child = cp.spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+			const timer = setTimeout(() => child.kill(), timeoutMs);
+			child.stdout.on('data', chunk => output += chunk);
+			child.stderr.on('data', chunk => output += chunk);
+			child.on('error', e => { clearTimeout(timer); resolve({ exitCode: undefined, output: output + e.message }); });
+			child.on('close', code => { clearTimeout(timer); resolve({ exitCode: code ?? undefined, output }); });
+		});
 	}
 
 	sendToTerminal(name: string, command: string, cwd?: string): void {
@@ -86,6 +100,10 @@ export class VscodeModeHost implements ModeHost {
 		return exists(vscode.Uri.file(fsPath));
 	}
 
+	stm32CubeIdeInstalls(): Promise<string[]> {
+		return discoverStm32CubeIdeInstalls();
+	}
+
 	showInfo(message: string, ...actions: MessageAction[]): Promise<void> {
 		return dispatch(vscode.window.showInformationMessage(message, ...actions.map(a => a.title)), actions);
 	}
@@ -100,6 +118,10 @@ export class VscodeModeHost implements ModeHost {
 
 	log(message: string): void {
 		log(message);
+	}
+
+	showLog(): void {
+		getOutputChannel().show(true);
 	}
 }
 

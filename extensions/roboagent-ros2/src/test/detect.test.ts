@@ -7,7 +7,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { detectEsp32, detectMode, detectRos2, detectStm32, findFile } from '../modes/detect';
+import { detectEsp32, detectMode, detectRos2, detectStm32, findFile, findStm32Projects, isStm32ProjectDir } from '../modes/detect';
 
 async function tmp(): Promise<string> {
 	return fs.promises.mkdtemp(path.join(os.tmpdir(), 'roboagent-detect-'));
@@ -41,6 +41,24 @@ suite('Mode detection', () => {
 		await touch(c, 'cmake/arm-none-eabi.cmake');
 		assert.strictEqual(await detectStm32(c), true);
 		assert.strictEqual(await detectEsp32(c), false);
+	});
+
+	test('STM32: project folders at the root or below it (STM32CubeIDE workspace)', async () => {
+		const a = await tmp(); dirs.push(a);
+		await touch(a, 'blinky/CMakeLists.txt', 'project(blinky)\n');
+		await touch(a, 'blinky/STM32F103C8TX_FLASH.ld');
+		await touch(a, 'managed/.cproject', '<cproject><option superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.option.target_mcu"/></cproject>');
+		await touch(a, 'host_tool/CMakeLists.txt', 'project(tool)\n');   // a build definition without STM32 markers
+		await touch(a, 'blinky/Drivers/CMakeLists.txt');                   // inside a project: not a project of its own
+		await touch(a, 'blinky/Drivers/STM32F1xx_FLASH.ld');
+		assert.strictEqual(await detectStm32(a), true);
+		assert.deepStrictEqual((await findStm32Projects(a)).map(p => path.relative(a, p)).sort(), ['blinky', 'managed']);
+		assert.strictEqual(await isStm32ProjectDir(path.join(a, 'host_tool')), false);
+
+		const plain = await tmp(); dirs.push(plain);
+		await touch(plain, 'app/CMakeLists.txt', 'project(app)\n');
+		await touch(plain, 'app/linker.ld');
+		assert.strictEqual(await detectStm32(plain), false);
 	});
 
 	test('ESP32: sdkconfig or IDF markers in CMakeLists', async () => {

@@ -8,7 +8,8 @@
  *
  *  STM32 mode needs host tools that RoboAgent cannot bundle: the Arm GNU toolchain
  *  (`arm-none-eabi-gcc`), `cmake` or `make`, and for debugging `openocd` plus a GDB
- *  (`arm-none-eabi-gdb`, or the distro's `gdb-multiarch`). STM32 Create / Build / Debug call
+ *  (`arm-none-eabi-gdb`, or the distro's `gdb-multiarch`); an STM32CubeIDE install fills in
+ *  whichever of the compiler, GDB and OpenOCD are not on PATH. STM32 Create / Build / Debug call
  *  this first; when something required is missing the user is offered an install command for
  *  the machine's package manager (run in a terminal, so `sudo` can ask for a password), the
  *  Arm download page when there is none, or a folder picker for a toolchain already on disk.
@@ -17,7 +18,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { MessageAction, ModeHost } from '../modeHost';
-import { discoverArmToolchainDir } from '../toolchains';
+import { discoverArmToolchainDir, Stm32CubeIdeTools, stm32CubeIdeTools } from '../toolchains';
 import { Stm32Toolchain } from './generator';
 
 export const ARM_GNU_TOOLCHAIN_URL = 'https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads';
@@ -31,6 +32,10 @@ export interface Stm32Tools {
 	readonly toolchainDir: string | undefined;
 	/** The GDB to run: `<toolchainDir>/arm-none-eabi-gdb`, `arm-none-eabi-gdb` or `gdb-multiarch` on PATH. */
 	readonly gdbPath: string | undefined;
+	/** OpenOCD outside PATH (STM32CubeIDE's); undefined means `openocd` on PATH. */
+	readonly openocdPath?: string;
+	/** Script directory to pass with `-s` alongside {@link openocdPath}. */
+	readonly openocdScriptsDir?: string;
 	readonly present: ReadonlySet<Stm32Tool>;
 }
 
@@ -39,7 +44,7 @@ export interface EnsureToolchainOptions {
 	readonly silentIfPresent?: boolean;
 	/** What the user was about to do; decides what is required and tailors the message. */
 	readonly purpose?: Stm32Purpose;
-	/** For `build`: the project's build system (`cmake` needs cmake, `make` needs make). */
+	/** For `build`: the project's build system (`cmake` needs cmake and make, `make` needs make). */
 	readonly buildSystem?: Stm32Toolchain;
 	/** Offer to go on without the toolchain (Create can still scaffold the project files). */
 	readonly allowContinue?: boolean;
@@ -76,7 +81,7 @@ const PACKAGES: Readonly<Record<PackageManager, Readonly<Record<Stm32Tool, reado
 export function requiredStm32Tools(purpose: Stm32Purpose | undefined, buildSystem: Stm32Toolchain = 'cmake'): Stm32Tool[] {
 	switch (purpose) {
 		case 'create': return ['gcc'];
-		case 'build': return ['gcc', buildSystem === 'make' ? 'make' : 'cmake'];
+		case 'build': return buildSystem === 'make' ? ['gcc', 'make'] : ['gcc', 'cmake', 'make'];
 		case 'debug': return ['openocd', 'gdb'];
 		default: return ['gcc', 'cmake', 'openocd', 'gdb'];
 	}
@@ -117,9 +122,12 @@ export async function resolveToolchainBinDir(host: ModeHost, folder: string): Pr
 	return undefined;
 }
 
-/** Probe PATH, `roboagent.stm32.toolchainPath` and the well-known install locations. */
+/** Probe PATH, `roboagent.stm32.toolchainPath`, the well-known install locations and STM32CubeIDE. */
 export async function probeStm32Tools(host: ModeHost): Promise<Stm32Tools> {
 	const present = new Set<Stm32Tool>();
+	let cubeIde: Stm32CubeIdeTools | undefined;
+	const fromCubeIde = async () => cubeIde ??= await stm32CubeIdeTools(await host.stm32CubeIdeInstalls());
+
 	const gccOnPath = await host.toolOnPath('arm-none-eabi-gcc');
 	const configured = host.getSetting<string>('roboagent.stm32.toolchainPath')?.trim() || undefined;
 	let toolchainDir = await discoverArmToolchainDir(configured, gccOnPath);
@@ -127,28 +135,46 @@ export async function probeStm32Tools(host: ModeHost): Promise<Stm32Tools> {
 		host.log(`STM32: roboagent.stm32.toolchainPath "${toolchainDir}" has no arm-none-eabi-gcc — ignoring it.`);
 		toolchainDir = await discoverArmToolchainDir(undefined, gccOnPath);
 	}
+	if (!gccOnPath && !toolchainDir) {
+		toolchainDir = (await fromCubeIde()).gccBinDir;
+	}
 	if (gccOnPath || toolchainDir) { present.add('gcc'); }
-	for (const tool of ['cmake', 'make', 'openocd'] as const) {
+	for (const tool of ['cmake', 'make'] as const) {
 		if (await host.toolOnPath(tool)) { present.add(tool); }
 	}
+	let openocdPath: string | undefined;
+	let openocdScriptsDir: string | undefined;
+	if (await host.toolOnPath('openocd')) {
+		present.add('openocd');
+	} else if ((await fromCubeIde()).openocdPath) {
+		({ openocdPath, openocdScriptsDir } = await fromCubeIde());
+		present.add('openocd');
+	}
 	let gdbPath: string | undefined;
+	const cubeIdeGdb = async () => {
+		const bin = (await fromCubeIde()).gccBinDir;
+		return bin && await host.fileExists(path.join(bin, 'arm-none-eabi-gdb')) ? path.join(bin, 'arm-none-eabi-gdb') : undefined;
+	};
 	if (toolchainDir && await host.fileExists(path.join(toolchainDir, 'arm-none-eabi-gdb'))) {
 		gdbPath = path.join(toolchainDir, 'arm-none-eabi-gdb');
 	} else if (await host.toolOnPath('arm-none-eabi-gdb')) {
 		gdbPath = 'arm-none-eabi-gdb';
 	} else if (await host.toolOnPath('gdb-multiarch')) {
 		gdbPath = 'gdb-multiarch';
+	} else {
+		gdbPath = await cubeIdeGdb();
 	}
 	if (gdbPath) { present.add('gdb'); }
-	return { toolchainDir, gdbPath, present };
+	return { toolchainDir, gdbPath, openocdPath, openocdScriptsDir, present };
 }
 
 export function describeStm32Tools(tools: Stm32Tools): string {
 	const parts: string[] = [];
 	parts.push(tools.present.has('gcc') ? `arm-none-eabi-gcc ${tools.toolchainDir ? `in ${tools.toolchainDir}` : 'on PATH'}` : 'no arm-none-eabi-gcc');
-	for (const tool of ['cmake', 'make', 'openocd'] as const) {
+	for (const tool of ['cmake', 'make'] as const) {
 		parts.push(tools.present.has(tool) ? tool : `no ${tool}`);
 	}
+	parts.push(tools.openocdPath ? `openocd: ${tools.openocdPath}` : tools.present.has('openocd') ? 'openocd' : 'no openocd');
 	parts.push(tools.gdbPath ? `gdb: ${tools.gdbPath}` : 'no gdb');
 	return parts.join(', ');
 }

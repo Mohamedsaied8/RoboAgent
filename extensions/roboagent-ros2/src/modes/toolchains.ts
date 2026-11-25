@@ -70,6 +70,61 @@ export async function discoverArmToolchainDir(configured: string | undefined, on
 	return undefined;
 }
 
+// --- STM32CubeIDE -----------------------------------------------------------------------
+
+/** STM32CubeIDE install folders (the ones holding `plugins/`), newest version first. */
+export async function discoverStm32CubeIdeInstalls(home: string = os.homedir(), platform: NodeJS.Platform = process.platform): Promise<string[]> {
+	const versioned = async (parent: string, pattern: RegExp, sub = '') => (await listDirs(parent))
+		.filter(d => pattern.test(path.basename(d)))
+		.sort((a, b) => path.basename(b).localeCompare(path.basename(a), undefined, { numeric: true }))
+		.map(d => path.join(d, sub));
+	const candidates = platform === 'darwin'
+		? ['/Applications/STM32CubeIDE.app/Contents/Eclipse']
+		: platform === 'win32'
+			? await versioned('C:\\ST', /^STM32CubeIDE/i, 'STM32CubeIDE')
+			: [...await versioned('/opt/st', /^stm32cubeide/i), ...await versioned(path.join(home, 'st'), /^stm32cubeide/i)];
+	const installs: string[] = [];
+	for (const dir of candidates) {
+		if (await isDir(path.join(dir, 'plugins'))) {
+			installs.push(dir);
+		}
+	}
+	return installs;
+}
+
+export interface Stm32CubeIdeTools {
+	/** `tools/bin` of the bundled GNU Tools for STM32 (arm-none-eabi-gcc / -gdb). */
+	readonly gccBinDir?: string;
+	readonly openocdPath?: string;
+	/** ST's OpenOCD script tree (`interface/`, `target/`), passed to openocd with `-s`. */
+	readonly openocdScriptsDir?: string;
+}
+
+/** The toolchain pieces bundled in STM32CubeIDE installs (plugins/…), first install that has each wins. */
+export async function stm32CubeIdeTools(installs: readonly string[]): Promise<Stm32CubeIdeTools> {
+	let gccBinDir: string | undefined;
+	let openocdPath: string | undefined;
+	let openocdScriptsDir: string | undefined;
+	const exe = process.platform === 'win32' ? '.exe' : '';
+	for (const install of installs) {
+		// Plugin folders carry a version suffix; the reverse sort tries the newest first.
+		const plugins = (await listDirs(path.join(install, 'plugins'))).sort().reverse();
+		for (const plugin of plugins) {
+			const name = path.basename(plugin);
+			if (!gccBinDir && name.includes('.externaltools.gnu-tools-for-stm32.') && await isFile(path.join(plugin, 'tools', 'bin', `arm-none-eabi-gcc${exe}`))) {
+				gccBinDir = path.join(plugin, 'tools', 'bin');
+			}
+			if (!openocdPath && name.includes('.externaltools.openocd.') && await isFile(path.join(plugin, 'tools', 'bin', `openocd${exe}`))) {
+				openocdPath = path.join(plugin, 'tools', 'bin', `openocd${exe}`);
+			}
+			if (!openocdScriptsDir && name.includes('.mcu.debug.openocd_') && await isDir(path.join(plugin, 'resources', 'openocd', 'st_scripts'))) {
+				openocdScriptsDir = path.join(plugin, 'resources', 'openocd', 'st_scripts');
+			}
+		}
+	}
+	return { gccBinDir, openocdPath, openocdScriptsDir: openocdPath ? openocdScriptsDir : undefined };
+}
+
 async function readText(p: string): Promise<string | undefined> {
 	try {
 		return await fs.promises.readFile(p, 'utf8');

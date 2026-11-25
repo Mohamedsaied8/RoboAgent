@@ -25,7 +25,7 @@ function tools(present: Stm32Tool[], extra: Partial<Stm32Tools> = {}): Stm32Tool
 suite('STM32 toolchain check', () => {
 	test('requirements per purpose', () => {
 		assert.deepStrictEqual(requiredStm32Tools('create'), ['gcc']);
-		assert.deepStrictEqual(requiredStm32Tools('build', 'cmake'), ['gcc', 'cmake']);
+		assert.deepStrictEqual(requiredStm32Tools('build', 'cmake'), ['gcc', 'cmake', 'make']);
 		assert.deepStrictEqual(requiredStm32Tools('build', 'make'), ['gcc', 'make']);
 		assert.deepStrictEqual(requiredStm32Tools('debug'), ['openocd', 'gdb']);
 		assert.deepStrictEqual(requiredStm32Tools(undefined), ['gcc', 'cmake', 'openocd', 'gdb']);

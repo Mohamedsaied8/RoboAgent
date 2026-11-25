@@ -420,18 +420,37 @@ function cCppProperties(spec: Stm32ProjectSpec, t: ResolvedStm32Target): string 
 	});
 }
 
-/** The build command lines; shared with the STM32 provider so the Build button and tasks.json agree. */
-export function stm32BuildCommands(toolchain: Stm32Toolchain, toolchainPath?: string): { configure?: string; build: string; clean: string } {
+/** How an existing project is built, beyond its build system (see `project.ts`). */
+export interface Stm32BuildOptions {
+	/** CMake toolchain file (relative to the project) for a CMakeLists.txt that does not set one itself. */
+	readonly toolchainFile?: string;
+	/** Generator recorded in an existing `build/CMakeCache.txt`; a build tree cannot switch generators. */
+	readonly cachedGenerator?: string;
+	/** Run make in this subfolder (STM32CubeIDE's generated `Debug/makefile`) instead of the project root. */
+	readonly makeDirectory?: string;
+}
+
+const MAKEFILES_GENERATOR = 'Unix Makefiles';
+
+/**
+ * The build command lines; shared with the STM32 provider so the Build button and tasks.json agree.
+ * CMake projects are configured into `build/` with the Makefile generator and built with `make`
+ * (an existing build tree made with another generator keeps it and is built with `cmake --build`).
+ */
+export function stm32BuildCommands(toolchain: Stm32Toolchain, toolchainPath?: string, options: Stm32BuildOptions = {}): { configure?: string; build: string; clean: string } {
 	if (toolchain === 'cmake') {
+		const makefiles = !options.cachedGenerator || options.cachedGenerator === MAKEFILES_GENERATOR;
+		const generator = makefiles ? ` -G ${shellQuote(MAKEFILES_GENERATOR)}` : '';
+		const tf = options.toolchainFile ? ` -DCMAKE_TOOLCHAIN_FILE=${shellQuote(options.toolchainFile)}` : '';
 		const tp = toolchainPath ? ` -DTOOLCHAIN_PATH=${shellQuote(toolchainPath)}` : '';
-		return {
-			configure: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug${tp}`,
-			build: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug${tp} && cmake --build build --parallel`,
-			clean: 'cmake --build build --target clean',
-		};
+		const configure = `cmake -S . -B build${generator} -DCMAKE_BUILD_TYPE=Debug${tf}${tp}`;
+		return makefiles
+			? { configure, build: `${configure} && make -C build -j`, clean: 'make -C build clean' }
+			: { configure, build: `${configure} && cmake --build build --parallel`, clean: 'cmake --build build --target clean' };
 	}
+	const dir = options.makeDirectory ? ` -C ${shellQuote(options.makeDirectory)}` : '';
 	const tp = toolchainPath ? ` TOOLCHAIN_PATH=${shellQuote(toolchainPath)}` : '';
-	return { build: `make -j${tp}`, clean: 'make clean' };
+	return { build: `make${dir} -j${tp}${options.makeDirectory ? ' all' : ''}`, clean: `make${dir} clean` };
 }
 
 export function shellQuote(value: string): string {
@@ -440,6 +459,24 @@ export function shellQuote(value: string): string {
 
 export function openocdArgs(spec: Stm32ProjectSpec): string[] {
 	return ['-f', `interface/${spec.openocdInterface}.cfg`, '-f', `target/${spec.target.family.openocdTarget}.cfg`];
+}
+
+/**
+ * A user-facing reason for a failed `openocd … -c "init; shutdown"` probe check, from its output:
+ * no probe on USB, no USB permission, or a probe that cannot reach the MCU.
+ */
+export function describeOpenOcdFailure(output: string): string {
+	if (/LIBUSB_ERROR_ACCESS|permission denied/i.test(output)) {
+		return 'The debug probe was found but RoboAgent may not open it (USB permission denied). Install the ST-Link udev rules (e.g. the openocd or stlink-tools package) and re-plug the probe.';
+	}
+	if (/open failed|no (st-?link|device) (detected|found)|unable to (open|find) (st-?link|cmsis-dap|j-?link)|could not find (matching )?(usb )?device|no j-?link device/i.test(output)) {
+		return 'No debug probe found. Connect the board through its ST-Link (or the probe set in roboagent.stm32.openocdInterface) and try again.';
+	}
+	if (/target voltage may be too low|error connecting dp|init mode failed|unknown (idcode|jtag)|examination failed|unable to connect/i.test(output)) {
+		return 'The debug probe was found but could not connect to the MCU. Check the SWD wiring and that the board is powered (BOOT0 low), then try again.';
+	}
+	const lastError = output.split(/\r?\n/).filter(l => /^\s*Error\b/i.test(l)).pop()?.trim();
+	return lastError ? `OpenOCD could not connect to the target: ${lastError}` : 'OpenOCD could not connect to the target.';
 }
 
 function elfPath(spec: Stm32ProjectSpec, id: string): string {
@@ -494,11 +531,12 @@ export function stm32LaunchConfigurations(spec: Stm32ProjectSpec, id: string): R
 			debugServerArgs: ocd.join(' '),
 			filterStderr: true,
 			serverStarted: 'Listening on port 3333 for gdb connections',
-			setupCommands: [
+			// Run once GDB is connected to OpenOCD; `setupCommands` run before `target remote`, where
+			// `monitor` is not available yet.
+			postRemoteConnectCommands: [
 				{ text: 'monitor reset halt' },
 				{ text: 'load' },
 				{ text: 'monitor reset halt' },
-				{ text: 'break main' },
 			],
 			preLaunchTask: 'STM32: Build',
 		},

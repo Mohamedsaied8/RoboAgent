@@ -62,8 +62,8 @@ suite('STM32 provider', () => {
 		assert.strictEqual(await new Stm32ModeProvider(host).detect(root), true);
 	});
 
-	test('build runs the CMake configure+build task with the gcc matcher', async () => {
-		host.tools.add('arm-none-eabi-gcc').add('cmake');
+	test('build configures with CMake and builds with make, with the gcc matcher', async () => {
+		host.tools.add('arm-none-eabi-gcc').add('cmake').add('make');
 		const exit = await new Stm32ModeProvider(host).build();
 		assert.strictEqual(exit, 0);
 		assert.strictEqual(host.tasks.length, 1);
@@ -71,19 +71,21 @@ suite('STM32 provider', () => {
 		assert.strictEqual(task.cwd, root);
 		assert.strictEqual(task.name, 'RoboAgent: STM32 build');
 		assert.deepStrictEqual(task.problemMatchers, ['$roboagent-gcc']);
-		assert.ok(task.command.startsWith('cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build --parallel'), task.command);
+		assert.strictEqual(task.command, `cmake -S . -B build -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Debug && make -C build -j`);
+		assert.strictEqual(task.env, undefined, 'the compiler is on PATH already');
 		assert.strictEqual(host.messages.length, 0, 'no prompt when the toolchain is present');
 	});
 
 	test('build passes the configured toolchain path and ignores a stale one', async () => {
 		const bin = await fakeToolchain();
-		host.tools.add('cmake');
+		host.tools.add('cmake').add('make');
 		host.settings.set('roboagent.stm32.toolchainPath', bin);
 		await new Stm32ModeProvider(host).build();
 		assert.ok(host.tasks[0].command.includes(`-DTOOLCHAIN_PATH=${bin}`), host.tasks[0].command);
+		assert.ok(host.tasks[0].env?.['PATH']?.startsWith(bin + path.delimiter), JSON.stringify(host.tasks[0].env));
 
 		const stale = new FakeHost();
-		stale.tools.add('arm-none-eabi-gcc').add('cmake');
+		stale.tools.add('arm-none-eabi-gcc').add('cmake').add('make');
 		stale.settings.set('roboagent.stm32.toolchainPath', '/opt/arm/bin');
 		await new Stm32ModeProvider(stale).build();
 		assert.strictEqual(stale.tasks.length, 1);
@@ -96,13 +98,13 @@ suite('STM32 provider', () => {
 		assert.strictEqual(host.tasks.length, 0);
 		assert.strictEqual(host.messages.length, 1);
 		assert.strictEqual(host.messages[0].level, 'warning');
-		assert.ok(host.messages[0].message.includes('missing: arm-none-eabi-gcc (Arm GNU toolchain), cmake'), host.messages[0].message);
+		assert.ok(host.messages[0].message.includes('missing: arm-none-eabi-gcc (Arm GNU toolchain), cmake, make.'), host.messages[0].message);
 		assert.ok(host.messages[0].message.includes('cannot be built'), host.messages[0].message);
 		assert.deepStrictEqual(host.messages[0].actions, [INSTALL_APT, USE_EXISTING]);
 	});
 
 	test('"Install with apt…" runs the apt command for exactly the missing tools in a terminal', async () => {
-		host.tools.add('apt-get').add('cmake');
+		host.tools.add('apt-get').add('cmake').add('make');
 		host.autoPick = INSTALL_APT;
 		await new Stm32ModeProvider(host).build();
 		assert.strictEqual(host.tasks.length, 0);
@@ -117,7 +119,7 @@ suite('STM32 provider', () => {
 		brew.tools.add('brew');
 		brew.autoPick = 'Install with Homebrew…';
 		await new Stm32ModeProvider(brew).build();
-		assert.strictEqual(brew.terminals[0].command, 'brew install --cask gcc-arm-embedded && brew install cmake');
+		assert.strictEqual(brew.terminals[0].command, 'brew install --cask gcc-arm-embedded && brew install cmake make');
 
 		const none = new FakeHost();
 		none.autoPick = 'Download Toolchain…';
@@ -128,7 +130,7 @@ suite('STM32 provider', () => {
 	});
 
 	test('"Use Existing Toolchain…" validates the folder, stores roboagent.stm32.toolchainPath and builds', async () => {
-		host.tools.add('cmake');
+		host.tools.add('cmake').add('make');
 		host.autoPick = USE_EXISTING;
 		host.folderToPick = root;   // no compiler in there
 		await new Stm32ModeProvider(host).build();
@@ -137,7 +139,7 @@ suite('STM32 provider', () => {
 		assert.strictEqual(host.settings.get('roboagent.stm32.toolchainPath'), undefined);
 
 		const ok = new FakeHost();
-		ok.tools.add('cmake');
+		ok.tools.add('cmake').add('make');
 		ok.autoPick = USE_EXISTING;
 		const bin = await fakeToolchain();
 		ok.folderToPick = path.dirname(bin);   // the unpacked archive root; bin/ is found inside
@@ -148,7 +150,7 @@ suite('STM32 provider', () => {
 	});
 
 	test('debug offers to build when no .elf exists, then starts Cortex-Debug', async () => {
-		host.tools.add('arm-none-eabi-gcc').add('cmake').add('openocd').add('arm-none-eabi-gdb');
+		host.tools.add('arm-none-eabi-gcc').add('cmake').add('make').add('openocd').add('arm-none-eabi-gdb');
 		host.installed.add('marus25.cortex-debug');
 		host.autoPick = 'Build now';
 		// Simulate the build producing the image.
@@ -239,6 +241,139 @@ suite('STM32 provider', () => {
 		assert.strictEqual(result.ready, true);
 		assert.strictEqual(host.messages[0].level, 'info');
 		assert.ok(host.messages[0].message.includes('STM32 toolchain found: arm-none-eabi-gcc on PATH, cmake, no make, openocd, gdb: gdb-multiarch'), host.messages[0].message);
+	});
+});
+
+suite('STM32 provider — STM32CubeIDE workspace', () => {
+	let workspace: string;
+	let project: string;
+	let host: FakeHost;
+
+	/** An STM32CubeIDE CMake project (the IDE's own template) one level below the opened folder. */
+	setup(async () => {
+		workspace = await tmp('roboagent-cubeide-');
+		project = path.join(workspace, 'gpio_test');
+		const files: Record<string, string> = {
+			'CMakeLists.txt': '# usage:\n#   cmake -DCMAKE_TOOLCHAIN_FILE=cubeide-gcc.cmake -S ./ -B Debug\ncmake_minimum_required(VERSION 3.20)\nproject(gpio_test)\n',
+			'CMakePresets.json': JSON.stringify({ version: 3, configurePresets: [{ name: 'default', hidden: true, generator: 'Ninja', binaryDir: '${sourceDir}/${presetName}', toolchainFile: '${sourceDir}/cubeide-gcc.cmake' }] }),
+			'cubeide-gcc.cmake': 'set(TOOLCHAIN_PREFIX "arm-none-eabi-")\nset(CMAKE_C_COMPILER "${TOOLCHAIN_PREFIX}gcc")\n',
+			'.cproject': '<option superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.option.target_mcu" useByScannerDiscovery="true" value="STM32F103C8Tx" valueType="string"/>',
+			'STM32F103C8TX_FLASH.ld': '',
+			'Sources/main.c': 'int main(void) { for (;;) { } }\n',
+		};
+		for (const [rel, content] of Object.entries(files)) {
+			await fs.promises.mkdir(path.dirname(path.join(project, rel)), { recursive: true });
+			await fs.promises.writeFile(path.join(project, rel), content);
+		}
+		await fs.promises.mkdir(path.join(workspace, '.metadata'));
+		vscodeStub.setFolders(workspace);
+		vscodeStub.window.activeTextEditor = undefined;
+		host = new FakeHost();
+		host.tools.add('arm-none-eabi-gcc').add('cmake').add('make');
+	});
+	teardown(() => fs.promises.rm(workspace, { recursive: true, force: true }));
+
+	/** A fake STM32CubeIDE install with its bundled GCC/GDB and OpenOCD plugins. */
+	async function fakeCubeIde(): Promise<{ gdb: string; openocd: string; scripts: string }> {
+		const plugins = path.join(workspace, 'stm32cubeide_2.2.0', 'plugins');
+		const gccBin = path.join(plugins, 'com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.14.3.rel1.linux64_1.0.100', 'tools', 'bin');
+		const openocdBin = path.join(plugins, 'com.st.stm32cube.ide.mcu.externaltools.openocd.linux64_2.4.500', 'tools', 'bin');
+		const scripts = path.join(plugins, 'com.st.stm32cube.ide.mcu.debug.openocd_2.3.400', 'resources', 'openocd', 'st_scripts');
+		for (const dir of [gccBin, openocdBin, scripts]) {
+			await fs.promises.mkdir(dir, { recursive: true });
+		}
+		for (const file of [path.join(gccBin, 'arm-none-eabi-gcc'), path.join(gccBin, 'arm-none-eabi-gdb'), path.join(openocdBin, 'openocd')]) {
+			await fs.promises.writeFile(file, '');
+		}
+		host.cubeIdeInstalls.push(path.dirname(plugins));
+		return { gdb: path.join(gccBin, 'arm-none-eabi-gdb'), openocd: path.join(openocdBin, 'openocd'), scripts };
+	}
+
+	test('the workspace is detected as STM32 and the project folder found below it', async () => {
+		const { findStm32Projects } = require('../modes/detect') as typeof import('../modes/detect');
+		assert.strictEqual(await new Stm32ModeProvider(host).detect(workspace), true);
+		assert.deepStrictEqual(await findStm32Projects(workspace), [project]);
+	});
+
+	test('build runs CMake with the project toolchain file, then make, in the project folder', async () => {
+		vscodeStub.window.activeTextEditor = { document: { uri: vscodeStub.Uri.file(path.join(project, 'Sources', 'main.c')) } };
+		const exit = await new Stm32ModeProvider(host).build();
+		assert.strictEqual(exit, 0);
+		assert.strictEqual(host.tasks.length, 1);
+		assert.strictEqual(host.tasks[0].cwd, project);
+		assert.strictEqual(host.tasks[0].command, `cmake -S . -B build -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=cubeide-gcc.cmake && make -C build -j`);
+	});
+
+	test('build keeps the generator of an existing build tree', async () => {
+		await fs.promises.mkdir(path.join(project, 'build'));
+		await fs.promises.writeFile(path.join(project, 'build', 'CMakeCache.txt'), 'CMAKE_GENERATOR:INTERNAL=Ninja\n');
+		await new Stm32ModeProvider(host).build();
+		assert.strictEqual(host.tasks[0].command, 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=cubeide-gcc.cmake && cmake --build build --parallel');
+	});
+
+	test('a managed-build STM32CubeIDE project runs make on the generated Debug/makefile', async () => {
+		await fs.promises.rm(path.join(project, 'CMakeLists.txt'));
+		await fs.promises.mkdir(path.join(project, 'Debug'), { recursive: true });
+		await fs.promises.writeFile(path.join(project, 'Debug', 'makefile'), 'all:\n');
+		await new Stm32ModeProvider(host).build();
+		assert.strictEqual(host.tasks[0].cwd, project);
+		assert.strictEqual(host.tasks[0].command, 'make -C Debug -j all');
+	});
+
+	test('debug uses the newest .elf, the MCU from .cproject and STM32CubeIDE\'s OpenOCD / GDB', async () => {
+		const cube = await fakeCubeIde();
+		await fs.promises.mkdir(path.join(project, 'Debug'), { recursive: true });
+		await fs.promises.writeFile(path.join(project, 'Debug', 'gpio_test.elf'), 'old');
+		await fs.promises.utimes(path.join(project, 'Debug', 'gpio_test.elf'), new Date(2020, 1, 1), new Date(2020, 1, 1));
+		await fs.promises.mkdir(path.join(project, 'build'), { recursive: true });
+		await fs.promises.writeFile(path.join(project, 'build', 'gpio_test.elf'), 'new');
+
+		await new Stm32ModeProvider(host).debug();
+		assert.strictEqual(host.debugSessions.length, 1, JSON.stringify(host.messages));
+		assert.strictEqual(host.debugSessions[0].folder, project);
+		const cfg = host.debugSessions[0].configuration;
+		assert.strictEqual(cfg.type, 'cppdbg');
+		assert.strictEqual(cfg.program, path.join(project, 'build', 'gpio_test.elf'));
+		assert.strictEqual(cfg.cwd, project);
+		assert.strictEqual(cfg.miDebuggerPath, cube.gdb);
+		assert.strictEqual(cfg.debugServerPath, cube.openocd);
+		assert.strictEqual(cfg.debugServerArgs, `-s ${cube.scripts} -f interface/stlink-dap.cfg -f target/stm32f1x.cfg`);
+
+		const cortex = new FakeHost();
+		cortex.cubeIdeInstalls.push(...host.cubeIdeInstalls);
+		cortex.tools.add('arm-none-eabi-gcc');   // system compiler on PATH, GDB only in STM32CubeIDE
+		cortex.installed.add('marus25.cortex-debug');
+		await new Stm32ModeProvider(cortex).debug();
+		const c = cortex.debugSessions[0].configuration;
+		assert.strictEqual(c.executable, path.join(project, 'build', 'gpio_test.elf'));
+		assert.strictEqual(c.device, 'STM32F103C8TX');
+		assert.strictEqual(c.gdbPath, cube.gdb);
+		assert.strictEqual(c.serverpath, cube.openocd);
+		assert.deepStrictEqual(c.searchDir, [cube.scripts]);
+		assert.deepStrictEqual(c.configFiles, ['interface/stlink-dap.cfg', 'target/stm32f1x.cfg']);
+		assert.deepStrictEqual(cortex.processes[0], { command: cube.openocd, args: ['-s', cube.scripts, '-f', 'interface/stlink-dap.cfg', '-f', 'target/stm32f1x.cfg', '-c', 'init; shutdown'] });
+		assert.strictEqual(c.armToolchainPath, undefined);
+	});
+	test('debug checks the probe with OpenOCD first and explains a missing ST-Link instead of starting a session', async () => {
+		await fs.promises.mkdir(path.join(project, 'build'), { recursive: true });
+		await fs.promises.writeFile(path.join(project, 'build', 'gpio_test.elf'), 'ELF');
+		host.tools.add('openocd').add('arm-none-eabi-gdb');
+		host.processResult = { exitCode: 1, output: 'Open On-Chip Debugger 0.12.0\nInfo : auto-selecting first available session transport "dapdirect_swd".\nError: open failed\n' };
+		await new Stm32ModeProvider(host).debug();
+		assert.strictEqual(host.debugSessions.length, 0);
+		assert.deepStrictEqual(host.processes[0], { command: 'openocd', args: ['-f', 'interface/stlink.cfg', '-f', 'target/stm32f1x.cfg', '-c', 'init; shutdown'] });
+		assert.strictEqual(host.messages.length, 1);
+		assert.strictEqual(host.messages[0].level, 'error');
+		assert.ok(host.messages[0].message.startsWith('No debug probe found.'), host.messages[0].message);
+		assert.deepStrictEqual(host.messages[0].actions, ['Retry', 'Show Log']);
+		assert.ok(host.logs.some(l => l.includes('Error: open failed')), host.logs.join('\n'));
+
+		const unstarted = new FakeHost();
+		unstarted.tools.add('openocd').add('arm-none-eabi-gdb');
+		unstarted.debugStarts = false;
+		await new Stm32ModeProvider(unstarted).debug();
+		assert.strictEqual(unstarted.debugSessions.length, 1);
+		assert.ok(unstarted.messages.some(m => m.level === 'error' && m.message.includes('did not start')), JSON.stringify(unstarted.messages));
 	});
 });
 

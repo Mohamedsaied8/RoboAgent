@@ -61,7 +61,7 @@
 	color: var(--vscode-button-foreground);
 }
 
-/* Build / Debug: icon buttons; disabled when no project of the current mode is present. */
+/* Build / Debug: icon buttons (always enabled; the extension reports a missing project). */
 .monaco-workbench .part.titlebar .center-adjacent-toolbar-container .action-item .roboagent-toolbar-item.icon {
 	padding: 0 4px;
 }

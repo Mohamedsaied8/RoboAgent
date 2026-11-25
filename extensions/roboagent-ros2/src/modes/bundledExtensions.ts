@@ -48,7 +48,7 @@ export function checkBundledExtensions(): void {
 	if (isExtensionInstalled(CORTEX_DEBUG_EXTENSION_ID)) {
 		log(`Optional extension ${CORTEX_DEBUG_EXTENSION_ID}@${extensionVersion(CORTEX_DEBUG_EXTENSION_ID)} present — STM32 on-chip debugging available.`);
 	} else {
-		log(`Optional extension ${CORTEX_DEBUG_EXTENSION_ID} not installed — STM32 mode offers to install it on first use (roboagent.stm32.ensureExtension).`);
+		log(`Optional extension ${CORTEX_DEBUG_EXTENSION_ID} not installed — STM32 debugging uses the bundled C/C++ debugger; install it with roboagent.stm32.ensureExtension to use it instead.`);
 	}
 	if (isExtensionInstalled(ST_STM32_EXTENSION_ID)) {
 		log(`Optional extension ${ST_STM32_EXTENSION_ID}@${extensionVersion(ST_STM32_EXTENSION_ID)} present (user-installed).`);

@@ -27,6 +27,13 @@ export interface TaskResult {
 	readonly exitCode: number | undefined;
 }
 
+export interface ProcessResult {
+	/** Exit code, or undefined when the process could not be started or was killed on timeout. */
+	readonly exitCode: number | undefined;
+	/** stdout and stderr, interleaved. */
+	readonly output: string;
+}
+
 export interface MessageAction {
 	readonly title: string;
 	readonly run: () => void | Promise<void>;
@@ -35,6 +42,8 @@ export interface MessageAction {
 export interface ModeHost {
 	/** Run a shell task in the Terminal panel; resolves when the process ends. */
 	runShellTask(request: ShellTaskRequest): Promise<TaskResult>;
+	/** Run a program to completion without a terminal (quick checks); killed after `timeoutMs`. */
+	runProcess(command: string, args: readonly string[], timeoutMs: number): Promise<ProcessResult>;
 	/** Send a command line to a (new) integrated terminal and reveal it. */
 	sendToTerminal(name: string, command: string, cwd?: string): void;
 	/** Start a debug session; resolves to whether the session started. */
@@ -52,8 +61,12 @@ export interface ModeHost {
 	/** Whether `tool` resolves on PATH. */
 	toolOnPath(tool: string): Promise<boolean>;
 	fileExists(fsPath: string): Promise<boolean>;
+	/** STM32CubeIDE install folders on this machine (their bundled OpenOCD / GDB back up missing tools). */
+	stm32CubeIdeInstalls(): Promise<string[]>;
 	showInfo(message: string, ...actions: MessageAction[]): Promise<void>;
 	showWarning(message: string, ...actions: MessageAction[]): Promise<void>;
 	showError(message: string, ...actions: MessageAction[]): Promise<void>;
 	log(message: string): void;
+	/** Reveal the RoboAgent output channel. */
+	showLog(): void;
 }

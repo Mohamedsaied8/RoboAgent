@@ -37,9 +37,6 @@ export function activate(context: vscode.ExtensionContext): void {
 		...registerCommands(context),
 		...registerDebug(context),
 	);
-	// Generic CMake / single-file build-run (ported from roboagent-defaults).
-	registerCmake(context);
-
 	// Mode selector + Create/Build/Debug strategy (STM32 / ESP32 / ROS2). The fork's title-bar
 	// toolbar (contrib/roboagent) invokes these commands and reads the context keys the
 	// ModeService publishes.
@@ -50,6 +47,10 @@ export function activate(context: vscode.ExtensionContext): void {
 		['ros2', new Ros2ModeProvider(host)],
 	]);
 	const modeService = new ModeService(context, providers);
+
+	// Generic CMake / single-file build-run (ported from roboagent-defaults); defers to the
+	// mode's project Build / Debug in the firmware modes.
+	registerCmake(context, modeService);
 	context.subscriptions.push(getOutputChannel(), modeService, ...registerModeCommands(modeService, providers, host));
 	log(`RoboAgent ROS2 Toolkit ${(context.extension.packageJSON as { version?: string }).version ?? ''} activated`);
 	checkBundledExtensions();

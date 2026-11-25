@@ -238,36 +238,46 @@
 			],
 			"editor/title": [
 				{
+					"command": "roboagent.build",
+					"group": "navigation@1",
+					"when": "(roboagent.mode == stm32 || roboagent.mode == esp32) && (resourceLangId == c || resourceLangId == cpp || resourceLangId == cmake || resourceLangId == makefile || resourceFilename == CMakeLists.txt)"
+				},
+				{
 					"command": "roboagent.colconBuild",
 					"group": "navigation@1",
-					"when": "resourceFilename == package.xml || resourceFilename == CMakeLists.txt || resourceFilename =~ /.*\\.launch\\.py$/"
+					"when": "roboagent.mode != stm32 && roboagent.mode != esp32 && (resourceFilename == package.xml || resourceFilename == CMakeLists.txt || resourceFilename =~ /.*\\.launch\\.py$/)"
 				},
 				{
 					"command": "roboagent.cmakeBuild",
 					"group": "navigation@2",
-					"when": "roboagent.isCMakeProject && (resourceLangId == cpp || resourceLangId == c || resourceLangId == cmake)"
+					"when": "roboagent.mode != stm32 && roboagent.mode != esp32 && roboagent.isCMakeProject && (resourceLangId == cpp || resourceLangId == c || resourceLangId == cmake)"
 				},
 				{
 					"command": "roboagent.cmakeRun",
 					"group": "navigation@3",
-					"when": "roboagent.isCMakeProject && (resourceLangId == cpp || resourceLangId == c || resourceLangId == cmake)"
+					"when": "roboagent.mode != stm32 && roboagent.mode != esp32 && roboagent.isCMakeProject && (resourceLangId == cpp || resourceLangId == c || resourceLangId == cmake)"
 				}
 			],
 			"editor/title/run": [
 				{
+					"command": "roboagent.debug",
+					"group": "navigation@0",
+					"when": "(roboagent.mode == stm32 || roboagent.mode == esp32) && (resourceLangId == c || resourceLangId == cpp || resourceLangId == cmake || resourceLangId == makefile || resourceFilename == CMakeLists.txt)"
+				},
+				{
 					"command": "roboagent.runLaunch",
 					"group": "navigation@1",
-					"when": "resourceFilename == package.xml || resourceFilename == CMakeLists.txt || resourceFilename =~ /.*\\.launch\\.py$/"
+					"when": "roboagent.mode != stm32 && roboagent.mode != esp32 && (resourceFilename == package.xml || resourceFilename == CMakeLists.txt || resourceFilename =~ /.*\\.launch\\.py$/)"
 				},
 				{
 					"command": "roboagent.cmakeRun",
 					"group": "navigation@2",
-					"when": "roboagent.isCMakeProject && (resourceLangId == cpp || resourceLangId == c || resourceLangId == cmake)"
+					"when": "roboagent.mode != stm32 && roboagent.mode != esp32 && roboagent.isCMakeProject && (resourceLangId == cpp || resourceLangId == c || resourceLangId == cmake)"
 				},
 				{
 					"command": "roboagent.runFile",
 					"group": "navigation@3",
-					"when": "resourceLangId == python || (!roboagent.isCMakeProject && (resourceLangId == cpp || resourceLangId == c))"
+					"when": "resourceLangId == python || (roboagent.mode != stm32 && roboagent.mode != esp32 && !roboagent.isCMakeProject && (resourceLangId == cpp || resourceLangId == c))"
 				}
 			]
 		},

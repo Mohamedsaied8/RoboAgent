@@ -26,7 +26,7 @@ export const CONTEXT_MODE = 'roboagent.mode';
 export const CONTEXT_PROJECT_PRESENT = 'roboagent.modeProjectPresent';
 
 /** Files whose appearance/disappearance can change what the current mode's `detect()` says. */
-const PROJECT_MARKER_GLOB = '**/{package.xml,sdkconfig,sdkconfig.defaults,CMakeLists.txt,*.ioc,arm-none-eabi.cmake}';
+const PROJECT_MARKER_GLOB = '**/{package.xml,sdkconfig,sdkconfig.defaults,CMakeLists.txt,Makefile,.cproject,*.ioc,*.ld,arm-none-eabi.cmake}';
 
 export class ModeService implements vscode.Disposable {
 
@@ -122,11 +122,9 @@ export class ModeService implements vscode.Disposable {
 		if (!isMode(picked)) {
 			return;
 		}
+		// No extension prompt for STM32: Debug works with the bundled C/C++ debugger + OpenOCD, and
+		// Cortex-Debug stays an opt-in (`roboagent.stm32.ensureExtension` in the palette).
 		await this.setMode(picked, 'user');
-		if (picked === 'stm32') {
-			// First-run installer for the STM32 debug stack (log-only afterwards).
-			await vscode.commands.executeCommand('roboagent.stm32.ensureExtension', { silentIfPresent: true });
-		}
 	}
 
 	/**

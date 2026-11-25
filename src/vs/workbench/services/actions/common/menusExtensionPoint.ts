@@ -971,6 +971,15 @@ interface IRegisteredSubmenu {
 	readonly icon?: { dark: URI; light?: URI } | ThemeIcon;
 }
 
+/**
+ * RoboAgent: the bundled C/C++ and CMake Tools extensions' editor-title buttons that compile or
+ * run only the active file with the host compiler. In the firmware modes (`roboagent.mode` STM32 /
+ * ESP32, published by the roboagent-ros2 extension) they are hidden; the project Build / Debug
+ * buttons take their place.
+ */
+const ROBOAGENT_SINGLE_FILE_COMMANDS = new Set(['cmake.compileFile', 'C_Cpp.BuildAndDebugFile', 'C_Cpp.BuildAndRunFile', 'C_Cpp.AddDebugConfiguration']);
+const ROBOAGENT_NOT_FIRMWARE_MODE = ContextKeyExpr.and(ContextKeyExpr.notEquals('roboagent.mode', 'stm32'), ContextKeyExpr.notEquals('roboagent.mode', 'esp32'));
+
 const _submenus = new Map<string, IRegisteredSubmenu>();
 
 const submenusExtensionPoint = ExtensionsRegistry.registerExtensionPoint<schema.IUserFriendlySubmenu[]>({
@@ -1140,6 +1149,9 @@ menusExtensionPoint.setHandler(extensions => {
 				}
 
 				item.when = ContextKeyExpr.deserialize(menuItem.when);
+				if (schema.isMenuItem(menuItem) && (menu.id === MenuId.EditorTitle || menu.id === MenuId.EditorTitleRun) && ROBOAGENT_SINGLE_FILE_COMMANDS.has(menuItem.command)) {
+					item.when = ContextKeyExpr.and(item.when, ROBOAGENT_NOT_FIRMWARE_MODE);
+				}
 				_menuRegistrations.add(MenuRegistry.appendMenuItem(menu.id, item));
 			}
 		}

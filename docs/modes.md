@@ -15,7 +15,7 @@ the title bar, right of the command center:
 |---|---|---|
 | **Mode: X ▾** | `roboagent.selectMode` | QuickPick with STM32 / ESP32 / ROS2 (icon + one-line description). Also a clickable status-bar item on the left. |
 | **Create** (primary, blue) | `roboagent.create` | The current mode's Create wizard. |
-| **Build** `$(tools)` | `roboagent.build` · `Ctrl+Shift+B` | Builds the current project; disabled until a project of the current mode is detected. Tooltip: *Build (STM32)*. |
+| **Build** `$(tools)` | `roboagent.build` · `Ctrl+Shift+B` | Builds the current project (always clickable; without a project it says what is missing). Tooltip: *Build (STM32)*. |
 | **Debug** `$(debug-alt)` | `roboagent.debug` · `Ctrl+Alt+D` | Starts the mode's debug session; offers to build first when nothing is built. |
 
 `Ctrl+Shift+D` was not used for Debug: VS Code binds it to *Show Run and Debug*. `Ctrl+Shift+B`
@@ -34,7 +34,7 @@ Mode-specific aliases exist for the palette and keybindings: `roboagent.<mode>.c
 
 | Detected | Marker |
 |---|---|
-| `stm32` | a `*.ioc` (≤ 2 levels deep), an `STM32CubeIDE/` folder, or `cmake/arm-none-eabi.cmake` |
+| `stm32` | a `*.ioc` (≤ 2 levels deep), an `STM32CubeIDE/` folder, `cmake/arm-none-eabi.cmake`, or a project folder (root or ≤ 2 levels deep, e.g. an STM32CubeIDE workspace) with a `CMakeLists.txt` / `Makefile` / `.cproject` next to an `STM32*.ld` linker script, a `*.ioc` or an STM32CubeIDE `.cproject` |
 | `esp32` | `sdkconfig` / `sdkconfig.defaults`, or a root/`main/` `CMakeLists.txt` mentioning `idf_component_register` or `IDF_PATH` |
 | `ros2` | `package.xml` at the root or under `src/` |
 
@@ -59,17 +59,37 @@ placeholder, `Core/Src/main.c`, `Core/Inc/main.h`, `.vscode/{c_cpp_properties,la
 `README.md`. Library: `add_library(... STATIC ...)`, `Inc/`, `Src/`, no main/linker/startup.
 Files are staged in a temp directory and moved into place only at the end.
 
-**Build** — `cmake -S . -B build && cmake --build build` (or `make -j`) as a task in the
-*RoboAgent: STM32 build* terminal, errors in Problems via `$roboagent-gcc`. The compiler comes
-from `PATH` or `roboagent.stm32.toolchainPath` (passed as `-DTOOLCHAIN_PATH=`, never written into
-the project).
+**Build** — acts on the STM32 project holding the active file (else the only one in the
+workspace, else a pick), so an STM32CubeIDE workspace with projects in subfolders works. Runs in
+the *RoboAgent: STM32 build* terminal, errors in Problems via `$roboagent-gcc`:
+
+| Project | Command (in the project folder) |
+|---|---|
+| `CMakeLists.txt` | `cmake -S . -B build -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Debug [-DCMAKE_TOOLCHAIN_FILE=…] && make -C build -j` |
+| `CMakeLists.txt`, `build/` already configured with another generator | same configure without `-G`, then `cmake --build build --parallel` |
+| `Makefile` | `make -j` |
+| STM32CubeIDE managed build (`Debug/makefile`) | `make -C Debug -j all` |
+
+A CMakeLists.txt that does not `set(CMAKE_TOOLCHAIN_FILE …)` gets the toolchain file from
+`CMakePresets.json` or the `*.cmake` that sets an arm-none-eabi compiler (STM32CubeIDE's
+`cubeide-gcc.cmake`). The compiler comes from `PATH`, `roboagent.stm32.toolchainPath`, or an
+STM32CubeIDE install; an off-`PATH` toolchain is put first on the task's `PATH` and, for projects
+that read it (RoboAgent's), passed as `-DTOOLCHAIN_PATH=` — never written into the project.
+
+In STM32 / ESP32 mode the editor-title buttons of C/C++/CMake files are the project **Build** and
+**Debug**, and *Build/Run Active File* forward to them: firmware is never compiled as a single host
+file. The bundled extensions' single-file buttons (CMake Tools *Compile Active File*, C/C++ *Run /
+Debug C/C++ File*, *Add Debug Configuration*) are hidden in those modes
+(`src/vs/workbench/services/actions/common/menusExtensionPoint.ts`).
 
 **Toolchain check** — the host tools STM32 mode needs cannot be bundled, so Create, Build and
 Debug first probe for them: `arm-none-eabi-gcc` (on `PATH`, in `roboagent.stm32.toolchainPath`,
 or in the well-known install folders — a setting without a compiler in it is ignored), `cmake`
-or `make` (whichever the project uses), `openocd`, and a GDB (`arm-none-eabi-gdb` next to the
-compiler or on `PATH`, else `gdb-multiarch`). Create needs the compiler, Build the compiler and
-build tool, Debug OpenOCD and GDB. When something is missing a notification lists it and offers:
+and/or `make` (CMake projects need both), `openocd`, and a GDB (`arm-none-eabi-gdb` next to the
+compiler or on `PATH`, else `gdb-multiarch`). Whatever is still missing is taken from an
+STM32CubeIDE install (`/opt/st/stm32cubeide_*`, `~/st/stm32cubeide_*`): its GNU Tools for STM32,
+GDB, and OpenOCD with ST's scripts. Create needs the compiler, Build the compiler and build tools,
+Debug OpenOCD and GDB. When something is missing a notification lists it and offers:
 
 | Action | What happens |
 |---|---|
@@ -83,10 +103,15 @@ palette in STM32 mode) and its result is logged at startup.
 
 **Debug** — launches the Cortex-Debug/OpenOCD configuration when Cortex-Debug is installed
 (with `armToolchainPath` / `gdbPath` set when the compiler is off `PATH` or only `gdb-multiarch`
-exists), else cpptools `cppdbg` against an OpenOCD GDB server with the GDB the check found. No
-`.elf` → *Build now?* first. Interface script from `roboagent.stm32.openocdInterface` (`stlink`
-default). Cortex-Debug itself is offered once when STM32 mode is selected
-(`roboagent.stm32.ensureExtension`).
+exists), else cpptools `cppdbg` against an OpenOCD GDB server with the GDB the check found. The
+image is the newest `.elf` under `build/`, `Debug/` or `Release/`; none → *Build now?* first. The
+OpenOCD target comes from the MCU in `.roboagent/project.json`, the `.ioc`, the `.cproject` or the
+linker script name. Interface script from `roboagent.stm32.openocdInterface` (`stlink` default,
+used as `stlink-dap` with STM32CubeIDE's OpenOCD, whose `-s` script folder is passed along). Before
+the session starts, `openocd … -c "init; shutdown"` checks the probe: no ST-Link, no USB permission,
+or no connection to the MCU is reported as an error (with *Retry* / *Show Log*) instead of a
+session that silently ends. Cortex-Debug is optional and never prompted for: install it
+from the palette (`roboagent.stm32.ensureExtension`) to use it instead of the bundled C/C++ debugger.
 
 ## ESP32 mode
 

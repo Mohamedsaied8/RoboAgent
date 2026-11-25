@@ -10,7 +10,9 @@
  *  custom title bar). The four actions forward to the roboagent-ros2 extension commands
  *  (`roboagent.selectMode` / `create` / `build` / `debug`), which own the mode logic; the
  *  extension publishes the `roboagent.mode` and `roboagent.modeProjectPresent` context keys
- *  that drive labels, tooltips and enablement here. Rendering goes through
+ *  that drive labels and tooltips here. Build and Debug stay clickable without a detected
+ *  project: the extension then locates the project itself or tells the user what is missing,
+ *  instead of the button silently doing nothing. Rendering goes through
  *  IActionViewItemService so Create can be a real primary-styled button and Mode a
  *  dropdown-looking label, instead of bare codicons.
  *--------------------------------------------------------------------------------------------*/
@@ -26,7 +28,7 @@ import { localize, localize2 } from '../../../../nls.js';
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
 import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
-import { ContextKeyExpr, ContextKeyExpression, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
@@ -40,7 +42,6 @@ const MODE_ICONS: Readonly<Record<string, ThemeIcon>> = { stm32: Codicon.circuit
 
 /** Only show the toolbar once the extension has published a mode. */
 const HAS_MODE = ContextKeyExpr.has(ROBOAGENT_MODE_KEY);
-const PROJECT_PRESENT = ContextKeyExpr.has(ROBOAGENT_PROJECT_PRESENT_KEY);
 
 const CATEGORY = localize2('roboagent.category', "RoboAgent");
 
@@ -51,14 +52,13 @@ interface IToolbarActionDescriptor {
 	readonly order: number;
 	readonly icon?: ThemeIcon;
 	readonly kind: 'mode' | 'create' | 'icon';
-	readonly precondition?: ContextKeyExpression;
 }
 
 const TOOLBAR_ACTIONS: readonly IToolbarActionDescriptor[] = [
 	{ id: 'roboagent.toolbar.selectMode', title: localize('roboagent.toolbar.mode', "Mode"), forwardTo: 'roboagent.selectMode', order: 10, kind: 'mode' },
 	{ id: 'roboagent.toolbar.create', title: localize('roboagent.toolbar.create', "Create"), forwardTo: 'roboagent.create', order: 11, kind: 'create', icon: Codicon.add },
-	{ id: 'roboagent.toolbar.build', title: localize('roboagent.toolbar.build', "Build"), forwardTo: 'roboagent.build', order: 12, kind: 'icon', icon: Codicon.tools, precondition: PROJECT_PRESENT },
-	{ id: 'roboagent.toolbar.debug', title: localize('roboagent.toolbar.debug', "Debug"), forwardTo: 'roboagent.debug', order: 13, kind: 'icon', icon: Codicon.debugAlt, precondition: PROJECT_PRESENT },
+	{ id: 'roboagent.toolbar.build', title: localize('roboagent.toolbar.build', "Build"), forwardTo: 'roboagent.build', order: 12, kind: 'icon', icon: Codicon.tools },
+	{ id: 'roboagent.toolbar.debug', title: localize('roboagent.toolbar.debug', "Debug"), forwardTo: 'roboagent.debug', order: 13, kind: 'icon', icon: Codicon.debugAlt },
 ];
 
 function registerToolbarAction(desc: IToolbarActionDescriptor): void {
@@ -70,7 +70,6 @@ function registerToolbarAction(desc: IToolbarActionDescriptor): void {
 				category: CATEGORY,
 				icon: desc.icon,
 				f1: false,   // the palette entries live in the extension (roboagent.create etc.)
-				precondition: desc.precondition,
 				menu: [{ id: MenuId.TitleBarAdjacentCenter, order: desc.order, when: HAS_MODE }]
 			});
 		}

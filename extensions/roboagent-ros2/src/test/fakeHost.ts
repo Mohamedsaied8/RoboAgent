@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as fs from 'fs';
-import { MessageAction, ModeHost, ShellTaskRequest, TaskResult } from '../modes/modeHost';
+import { MessageAction, ModeHost, ProcessResult, ShellTaskRequest, TaskResult } from '../modes/modeHost';
 
 /** A recording {@link ModeHost} for provider tests: no terminals, no debug sessions, no UI. */
 export class FakeHost implements ModeHost {
@@ -18,16 +18,26 @@ export class FakeHost implements ModeHost {
 	readonly tools = new Set<string>();
 	readonly settings = new Map<string, unknown>();
 	readonly opened: string[] = [];
+	/** What `stm32CubeIdeInstalls` returns (no STM32CubeIDE unless a test adds one). */
+	readonly cubeIdeInstalls: string[] = [];
 	/** Title of the message action to auto-pick (simulates the user clicking it). */
 	autoPick: string | undefined;
 	/** What `pickFolder` returns (simulates the folder dialog). */
 	folderToPick: string | undefined;
 	taskExitCode: number | undefined = 0;
+	readonly processes: { command: string; args: readonly string[] }[] = [];
+	/** What `runProcess` returns (an OpenOCD probe check succeeds unless a test says otherwise). */
+	processResult: ProcessResult = { exitCode: 0, output: '' };
+	logShown = false;
 	debugStarts = true;
 
 	async runShellTask(request: ShellTaskRequest): Promise<TaskResult> {
 		this.tasks.push(request);
 		return { exitCode: this.taskExitCode };
+	}
+	async runProcess(command: string, args: readonly string[]): Promise<ProcessResult> {
+		this.processes.push({ command, args });
+		return this.processResult;
 	}
 	sendToTerminal(name: string, command: string, cwd?: string): void {
 		this.terminals.push({ name, command, cwd });
@@ -61,6 +71,9 @@ export class FakeHost implements ModeHost {
 	async fileExists(p: string): Promise<boolean> {
 		try { await fs.promises.access(p); return true; } catch { return false; }
 	}
+	async stm32CubeIdeInstalls(): Promise<string[]> {
+		return this.cubeIdeInstalls;
+	}
 	private async message(level: 'info' | 'warning' | 'error', message: string, actions: MessageAction[]): Promise<void> {
 		this.messages.push({ level, message, actions: actions.map(a => a.title) });
 		const pick = actions.find(a => a.title === this.autoPick);
@@ -70,4 +83,5 @@ export class FakeHost implements ModeHost {
 	showWarning(message: string, ...actions: MessageAction[]): Promise<void> { return this.message('warning', message, actions); }
 	showError(message: string, ...actions: MessageAction[]): Promise<void> { return this.message('error', message, actions); }
 	log(message: string): void { this.logs.push(message); }
+	showLog(): void { this.logShown = true; }
 }

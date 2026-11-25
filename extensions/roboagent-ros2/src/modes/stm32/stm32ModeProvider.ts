@@ -4,24 +4,27 @@
  *--------------------------------------------------------------------------------------------*/
 
 /*---------------------------------------------------------------------------------------------
- *  RoboAgent — STM32 mode: Create (wizard → CMake/Makefile project), Build (arm-none-eabi-gcc
- *  task with the gcc problem matcher), Debug (Cortex-Debug → cpptools/OpenOCD fallback). All
- *  three first make sure the tools they need are installed (`ensureToolchain.ts`) and offer to
- *  install them when they are not.
+ *  RoboAgent — STM32 mode: Create (wizard → CMake/Makefile project), Build (CMake configure +
+ *  make, or the project's Makefile, with the gcc problem matcher), Debug (Cortex-Debug →
+ *  cpptools/OpenOCD fallback). Build and Debug act on the STM32 project holding the active file,
+ *  which may sit below the workspace folder (an STM32CubeIDE workspace). All three first make
+ *  sure the tools they need are installed (`ensureToolchain.ts`) and offer to install them when
+ *  they are not.
  *--------------------------------------------------------------------------------------------*/
 
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { CORTEX_DEBUG_EXTENSION_ID } from '../bundledExtensions';
-import { detectStm32 } from '../detect';
+import { detectStm32, findStm32Projects } from '../detect';
 import { ModeHost } from '../modeHost';
 import { ModeProvider } from '../modeProvider';
 import { materialize, ScaffoldError, toIdentifier } from '../scaffold';
 import { BACK, inputStep, pickFolder, pickOrTypeStep, pickStep, StepResult, validateProjectName } from '../wizardSteps';
 import { ensureStm32Toolchain } from './ensureToolchain';
-import { generateStm32Project, stm32BuildCommands, Stm32ProjectKind, Stm32ProjectSpec, stm32LaunchConfigurations, Stm32Toolchain } from './generator';
+import { describeOpenOcdFailure, generateStm32Project, openocdArgs, shellQuote, stm32BuildCommands, Stm32ProjectKind, Stm32ProjectSpec, stm32LaunchConfigurations, Stm32Toolchain } from './generator';
 import { isPlausiblePartNumber, resolveTarget, STM32_FAMILIES, STM32_PARTS } from './mcuDatabase';
+import { findFirmwareImages, planStm32Build, readStm32Part } from './project';
 
 interface Stm32WizardResult {
 	readonly location: string;
@@ -156,14 +159,41 @@ export class Stm32ModeProvider implements ModeProvider {
 
 	// --- Build ----------------------------------------------------------------
 
+	/**
+	 * The STM32 project to act on: the one containing the active file, else the only one in the
+	 * workspace, else the user's pick. Without a recognisable STM32 project, the nearest folder
+	 * above the active file with a CMakeLists.txt / Makefile, else the workspace folder.
+	 */
 	private async projectRoot(): Promise<string | undefined> {
-		const active = vscode.window.activeTextEditor?.document.uri;
-		const folder = (active && vscode.workspace.getWorkspaceFolder(active)) ?? vscode.workspace.workspaceFolders?.[0];
-		if (!folder || folder.uri.scheme !== 'file') {
+		const folders = (vscode.workspace.workspaceFolders ?? []).filter(f => f.uri.scheme === 'file').map(f => f.uri.fsPath);
+		if (folders.length === 0) {
 			await this.host.showWarning(vscode.l10n.t('Open an STM32 project folder first (or use Create).'));
 			return undefined;
 		}
-		return folder.uri.fsPath;
+		const active = vscode.window.activeTextEditor?.document.uri;
+		const activePath = active?.scheme === 'file' ? active.fsPath : undefined;
+		const projects = (await Promise.all(folders.map(f => findStm32Projects(f)))).flat();
+		const containing = activePath && projects.filter(p => isInside(activePath, p)).sort((a, b) => b.length - a.length)[0];
+		if (containing) {
+			return containing;
+		}
+		if (projects.length === 1) {
+			return projects[0];
+		}
+		if (projects.length > 1) {
+			const pick = await vscode.window.showQuickPick(projects.map(p => ({ label: path.basename(p), description: p, root: p })), { title: vscode.l10n.t('Select the STM32 project') });
+			return pick?.root;
+		}
+		const folder = activePath && folders.find(f => isInside(activePath, f));
+		if (activePath && folder) {
+			for (let dir = path.dirname(activePath); isInside(dir, folder); dir = path.dirname(dir)) {
+				if (await this.host.fileExists(path.join(dir, 'CMakeLists.txt')) || await this.host.fileExists(path.join(dir, 'Makefile'))) {
+					return dir;
+				}
+				if (dir === folder) { break; }
+			}
+		}
+		return folder || folders[0];
 	}
 
 	private async readProjectJson(root: string): Promise<Stm32ProjectJson> {
@@ -174,44 +204,28 @@ export class Stm32ModeProvider implements ModeProvider {
 		}
 	}
 
-	private async toolchainFor(root: string): Promise<Stm32Toolchain> {
-		const json = await this.readProjectJson(root);
-		if (json.toolchain) { return json.toolchain; }
-		if (await this.host.fileExists(path.join(root, 'CMakeLists.txt'))) { return 'cmake'; }
-		return 'make';
-	}
-
 	async build(): Promise<number | undefined> {
 		const root = await this.projectRoot();
-		if (!root) { return undefined; }
-		const toolchain = await this.toolchainFor(root);
-		if (toolchain === 'make' && !(await this.host.fileExists(path.join(root, 'Makefile')))) {
+		return root ? this.buildProject(root) : undefined;
+	}
+
+	private async buildProject(root: string): Promise<number | undefined> {
+		const plan = await planStm32Build(root);
+		if (!plan) {
 			await this.host.showWarning(vscode.l10n.t('No CMakeLists.txt or Makefile in "{0}" — nothing to build. Use Create to scaffold an STM32 project.', root));
 			return undefined;
 		}
-		const { ready, tools } = await ensureStm32Toolchain(this.host, { silentIfPresent: true, purpose: 'build', buildSystem: toolchain });
+		const { ready, tools } = await ensureStm32Toolchain(this.host, { silentIfPresent: true, purpose: 'build', buildSystem: plan.buildSystem });
 		if (!ready) { return undefined; }   // the user was offered the installer
-		const commands = stm32BuildCommands(toolchain, tools.toolchainDir);
-		const result = await this.host.runShellTask({ name: 'RoboAgent: STM32 build', command: commands.build, cwd: root, problemMatchers: ['$roboagent-gcc'], group: 'build' });
+		const commands = stm32BuildCommands(plan.buildSystem, plan.usesToolchainPath ? tools.toolchainDir : undefined, plan.options);
+		// A toolchain off PATH (setting, well-known location, STM32CubeIDE) also goes first on PATH, for
+		// projects whose toolchain file / makefiles call plain `arm-none-eabi-gcc`.
+		const env = tools.toolchainDir ? { PATH: `${tools.toolchainDir}${path.delimiter}${process.env['PATH'] ?? ''}` } : undefined;
+		const result = await this.host.runShellTask({ name: 'RoboAgent: STM32 build', command: commands.build, cwd: root, problemMatchers: ['$roboagent-gcc'], group: 'build', env });
 		return result.exitCode;
 	}
 
 	// --- Debug ----------------------------------------------------------------
-
-	private async findElf(root: string): Promise<string | undefined> {
-		const json = await this.readProjectJson(root);
-		const expected = path.join(root, 'build', `${json.name ?? toIdentifier(path.basename(root))}.elf`);
-		if (await this.host.fileExists(expected)) {
-			return expected;
-		}
-		const found = await vscode.workspace.findFiles(new vscode.RelativePattern(root, 'build/**/*.elf'), undefined, 10);
-		if (found.length === 1) { return found[0].fsPath; }
-		if (found.length > 1) {
-			const pick = await vscode.window.showQuickPick(found.map(u => ({ label: path.relative(root, u.fsPath), uri: u })), { title: vscode.l10n.t('Select the firmware image to debug') });
-			return pick?.uri.fsPath;
-		}
-		return undefined;
-	}
 
 	async debug(): Promise<void> {
 		const root = await this.projectRoot();
@@ -225,39 +239,75 @@ export class Stm32ModeProvider implements ModeProvider {
 		const { ready, tools } = await ensureStm32Toolchain(this.host, { silentIfPresent: true, purpose: 'debug' });
 		if (!ready) { return; }   // the user was offered the installer
 
-		let elf = await this.findElf(root);
+		let elf = (await findFirmwareImages(root))[0];
 		if (!elf) {
 			const build = vscode.l10n.t('Build now');
 			let chosen = false;
-			await this.host.showWarning(vscode.l10n.t('No firmware image (.elf) found under build/. Build first?'), { title: build, run: () => { chosen = true; } });
+			await this.host.showWarning(vscode.l10n.t('No firmware image (.elf) found under build/ or Debug/. Build first?'), { title: build, run: () => { chosen = true; } });
 			if (!chosen) { return; }
-			const exitCode = await this.build();
+			const exitCode = await this.buildProject(root);
 			if (exitCode !== 0) { return; }
-			elf = await this.findElf(root);
+			elf = (await findFirmwareImages(root))[0];
 			if (!elf) {
 				await this.host.showError(vscode.l10n.t('The build finished but no .elf was produced under build/.'));
 				return;
 			}
 		}
 
-		const target = resolveTarget(json.part ?? 'STM32F407VGT6');
-		if (!json.part) {
-			this.host.log('STM32: no .roboagent/project.json part; assuming an STM32F4-class OpenOCD target for the debug config');
+		const part = json.part ?? await readStm32Part(root);
+		const target = resolveTarget(part ?? 'STM32F407VGT6');
+		if (!part) {
+			this.host.log('STM32: no MCU found in .roboagent/project.json, *.ioc, .cproject or the linker script; assuming an STM32F4-class OpenOCD target for the debug config');
 		}
-		const spec: Stm32ProjectSpec = { name: path.basename(root), target, kind: 'executable', toolchain: await this.toolchainFor(root), openocdInterface: this.host.getSetting<string>('roboagent.stm32.openocdInterface') || 'stlink' };
+		const plan = await planStm32Build(root);
+		let openocdInterface = this.host.getSetting<string>('roboagent.stm32.openocdInterface') || 'stlink';
+		if (tools.openocdPath && openocdInterface === 'stlink') {
+			// ST's OpenOCD fork recurses endlessly on the HLA `stlink` interface script; ST-Link is driven through `stlink-dap` there.
+			openocdInterface = 'stlink-dap';
+		}
+		const spec: Stm32ProjectSpec = { name: path.basename(root), target, kind: 'executable', toolchain: plan?.buildSystem ?? 'cmake', openocdInterface };
 		const [cortex, cppdbg] = stm32LaunchConfigurations(spec, json.name ?? toIdentifier(path.basename(root)));
-		const relElf = '${workspaceFolder}/' + path.relative(root, elf).split(path.sep).join('/');
+		// `${workspaceFolder}` only names the project when the project is the workspace folder.
+		const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(root))?.uri.fsPath;
+		const atFolderRoot = folder === root;
+		const executable = atFolderRoot ? '${workspaceFolder}/' + path.relative(root, elf).split(path.sep).join('/') : elf;
+		const cwd = atFolderRoot ? '${workspaceFolder}' : root;
 
 		let configuration: Record<string, unknown>;
 		if (this.host.isExtensionInstalled(CORTEX_DEBUG_EXTENSION_ID)) {
-			configuration = { ...cortex, executable: relElf, preLaunchTask: undefined };
-			// Cortex-Debug defaults to `arm-none-eabi-gdb` on PATH; point it at what was actually found.
+			configuration = { ...cortex, executable, cwd, preLaunchTask: undefined };
+			// Cortex-Debug defaults to `arm-none-eabi-gdb` / `openocd` on PATH; point it at what was actually found.
 			if (tools.toolchainDir) { configuration['armToolchainPath'] = tools.toolchainDir; }
-			if (tools.gdbPath === 'gdb-multiarch') { configuration['gdbPath'] = tools.gdbPath; }
+			if (tools.gdbPath && tools.gdbPath !== 'arm-none-eabi-gdb' && path.dirname(tools.gdbPath) !== tools.toolchainDir) { configuration['gdbPath'] = tools.gdbPath; }
+			if (tools.openocdPath) { configuration['serverpath'] = tools.openocdPath; }
+			if (tools.openocdScriptsDir) { configuration['searchDir'] = [tools.openocdScriptsDir]; }
 		} else {
 			this.host.log(`STM32: Cortex-Debug not installed; using cpptools cppdbg + OpenOCD with ${tools.gdbPath}`);
-			configuration = { ...cppdbg, program: relElf, preLaunchTask: undefined, miDebuggerPath: tools.gdbPath };
+			const scripts = tools.openocdScriptsDir ? `-s ${shellQuote(tools.openocdScriptsDir)} ` : '';
+			configuration = {
+				...cppdbg, program: executable, cwd, preLaunchTask: undefined, miDebuggerPath: tools.gdbPath,
+				debugServerPath: tools.openocdPath ?? cppdbg['debugServerPath'], debugServerArgs: scripts + String(cppdbg['debugServerArgs']),
+			};
 		}
-		await this.host.startDebugging(root, configuration);
+
+		// Without a reachable probe the debug adapter just ends silently; check first and say why.
+		const probeArgs = [...(tools.openocdScriptsDir ? ['-s', tools.openocdScriptsDir] : []), ...openocdArgs(spec), '-c', 'init; shutdown'];
+		const probe = await this.host.runProcess(tools.openocdPath ?? 'openocd', probeArgs, 20000);
+		if (probe.exitCode !== 0) {
+			this.host.log(`STM32: OpenOCD probe check failed (exit ${probe.exitCode}):\n${probe.output.split(/\r?\n/).filter(l => l && !l.startsWith('DEPRECATED')).join('\n')}`);
+			await this.host.showError(describeOpenOcdFailure(probe.output),
+				{ title: vscode.l10n.t('Retry'), run: () => this.debug() },
+				{ title: vscode.l10n.t('Show Log'), run: () => this.host.showLog() });
+			return;
+		}
+		if (!(await this.host.startDebugging(root, configuration))) {
+			await this.host.showError(vscode.l10n.t('The STM32 debug session did not start. See the Debug Console and the RoboAgent log for details.'),
+				{ title: vscode.l10n.t('Show Log'), run: () => this.host.showLog() });
+		}
 	}
+}
+
+function isInside(child: string, parent: string): boolean {
+	const rel = path.relative(parent, child);
+	return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }

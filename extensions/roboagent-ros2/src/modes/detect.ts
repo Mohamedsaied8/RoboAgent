@@ -6,8 +6,10 @@
 /*---------------------------------------------------------------------------------------------
  *  RoboAgent — project-type detection for the Mode selector (pure filesystem, no vscode).
  *
- *    STM32  — a `*.ioc` (STM32CubeMX) file, an `STM32CubeIDE/` folder, or a RoboAgent STM32
- *             CMake project (`cmake/arm-none-eabi.cmake`).
+ *    STM32  — a `*.ioc` (STM32CubeMX) file, an `STM32CubeIDE/` folder, a RoboAgent STM32
+ *             CMake project (`cmake/arm-none-eabi.cmake`), or a project folder (the root or up
+ *             to two levels down, e.g. an STM32CubeIDE workspace) holding a build definition
+ *             next to an STM32 linker script / `.ioc` / STM32CubeIDE `.cproject`.
  *    ESP32  — `sdkconfig` / `sdkconfig.defaults`, or a CMakeLists.txt (root or `main/`) that
  *             mentions `idf_component_register` or `IDF_PATH`.
  *    ROS2   — a `package.xml` at the root or under `src/` (a colcon workspace).
@@ -82,7 +84,76 @@ export async function detectStm32(folder: string): Promise<boolean> {
 	if (await exists(path.join(folder, 'cmake', 'arm-none-eabi.cmake'))) {
 		return true;
 	}
-	return (await findFile(folder, name => name.endsWith('.ioc'), 2)) !== undefined;
+	if ((await findFile(folder, name => name.endsWith('.ioc'), 2)) !== undefined) {
+		return true;
+	}
+	return (await findStm32Projects(folder, 2)).length > 0;
+}
+
+/** The linker scripts STM32CubeMX / STM32CubeIDE / RoboAgent emit, e.g. `STM32F103C8TX_FLASH.ld`. */
+export const STM32_LINKER_SCRIPT = /^stm32\w*\.ld$/i;
+
+/**
+ * Whether `dir` is the root of an STM32 firmware project: a build definition (`CMakeLists.txt`,
+ * `Makefile` or an Eclipse `.cproject`) next to an STM32 marker — a `*.ioc`, an `STM32*.ld` linker
+ * script, an STM32CubeIDE `.cproject`, or RoboAgent's `cmake/arm-none-eabi.cmake` /
+ * `.roboagent/project.json`.
+ */
+export async function isStm32ProjectDir(dir: string): Promise<boolean> {
+	let names: string[];
+	try {
+		names = await fs.promises.readdir(dir);
+	} catch {
+		return false;
+	}
+	const hasCProject = names.includes('.cproject');
+	if (!names.includes('CMakeLists.txt') && !names.includes('Makefile') && !hasCProject) {
+		return false;
+	}
+	if (names.some(name => name.endsWith('.ioc') || STM32_LINKER_SCRIPT.test(name))) {
+		return true;
+	}
+	if (hasCProject && (await readText(path.join(dir, '.cproject')))?.includes('com.st.stm32cube')) {
+		return true;
+	}
+	if (await exists(path.join(dir, 'cmake', 'arm-none-eabi.cmake'))) {
+		return true;
+	}
+	return /"target"\s*:\s*"stm32"/.test(await readText(path.join(dir, '.roboagent', 'project.json')) ?? '');
+}
+
+/**
+ * The STM32 project roots in `folder` (itself included), breadth-first down to `maxDepth`. A
+ * project's own subfolders are not searched, so an STM32CubeIDE workspace yields each project once.
+ */
+export async function findStm32Projects(folder: string, maxDepth = 2): Promise<string[]> {
+	const found: string[] = [];
+	let frontier: string[] = [folder];
+	for (let depth = 0; depth <= maxDepth && frontier.length > 0; depth++) {
+		const next: string[] = [];
+		for (const dir of frontier) {
+			if (await isStm32ProjectDir(dir)) {
+				found.push(dir);
+				continue;
+			}
+			if (depth === maxDepth) {
+				continue;
+			}
+			let entries: fs.Dirent[];
+			try {
+				entries = await fs.promises.readdir(dir, { withFileTypes: true });
+			} catch {
+				continue;
+			}
+			for (const entry of entries) {
+				if (entry.isDirectory() && !SKIP_DIRS.has(entry.name) && !entry.name.startsWith('.')) {
+					next.push(path.join(dir, entry.name));
+				}
+			}
+		}
+		frontier = next;
+	}
+	return found;
 }
 
 export async function detectEsp32(folder: string): Promise<boolean> {
