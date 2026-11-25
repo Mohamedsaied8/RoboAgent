@@ -62,7 +62,7 @@ suite('STM32 provider', () => {
 		assert.strictEqual(await new Stm32ModeProvider(host).detect(root), true);
 	});
 
-	test('build configures with CMake and builds with make, with the gcc matcher', async () => {
+	test('build configures with CMake and builds with make, with the gcc and CMake matchers', async () => {
 		host.tools.add('arm-none-eabi-gcc').add('cmake').add('make');
 		const exit = await new Stm32ModeProvider(host).build();
 		assert.strictEqual(exit, 0);
@@ -70,7 +70,7 @@ suite('STM32 provider', () => {
 		const task = host.tasks[0];
 		assert.strictEqual(task.cwd, root);
 		assert.strictEqual(task.name, 'RoboAgent: STM32 build');
-		assert.deepStrictEqual(task.problemMatchers, ['$roboagent-gcc']);
+		assert.deepStrictEqual(task.problemMatchers, ['$roboagent-gcc', '$roboagent-cmake']);
 		assert.strictEqual(task.command, `cmake -S . -B build -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Debug && make -C build -j`);
 		assert.strictEqual(task.env, undefined, 'the compiler is on PATH already');
 		assert.strictEqual(host.messages.length, 0, 'no prompt when the toolchain is present');
@@ -392,7 +392,7 @@ suite('ESP32 provider', () => {
 	});
 	teardown(async () => {
 		process.env['HOME'] = savedEnv.HOME;
-		if (savedEnv.IDF_PATH !== undefined) { process.env['IDF_PATH'] = savedEnv.IDF_PATH; }
+		if (savedEnv.IDF_PATH !== undefined) { process.env['IDF_PATH'] = savedEnv.IDF_PATH; } else { delete process.env['IDF_PATH']; }
 		await fs.promises.rm(root, { recursive: true, force: true });
 	});
 
@@ -408,14 +408,72 @@ suite('ESP32 provider', () => {
 	const INSTALL = 'Install ESP-IDF…';
 	const USE_EXISTING = 'Use Existing Install…';
 
-	test('build goes through espIdf.buildDevice when the ESP-IDF extension is installed', async () => {
+	test('build goes through espIdf.buildDevice when the ESP-IDF extension is set up with that ESP-IDF', async () => {
 		host.installed.add('espressif.esp-idf-extension');
-		host.settings.set('roboagent.esp32.idfPath', await fakeIdf());
+		host.settings.set('idf.currentSetup', await fakeIdf());
 		await new Esp32ModeProvider(host).build();
 		assert.deepStrictEqual(host.commands.map(c => c.id), ['espIdf.buildDevice']);
 		assert.strictEqual(host.tasks.length, 0);
 		assert.strictEqual(host.messages.length, 0, 'no prompt when ESP-IDF is present');
 		assert.ok(host.logs.some(l => l.includes('ESP-IDF v5.3.1')), host.logs.join('\n'));
+	});
+
+	test('build goes through espIdf.buildDevice for an ESP-IDF registered by the Installation Manager', async () => {
+		host.installed.add('espressif.esp-idf-extension');
+		const idf = await fakeIdf(path.join('.espressif', 'v5.3.1', 'esp-idf'));
+		await fs.promises.mkdir(path.join(root, '.espressif', 'tools'), { recursive: true });
+		await fs.promises.writeFile(path.join(root, '.espressif', 'tools', 'eim_idf.json'), JSON.stringify({ idfSelectedId: 'x', idfInstalled: { x: { name: 'v5.3.1', path: idf } } }));
+		await new Esp32ModeProvider(host).build();
+		assert.deepStrictEqual(host.commands.map(c => c.id), ['espIdf.buildDevice']);
+		assert.strictEqual(host.tasks.length, 0);
+	});
+
+	// Regression (manual test 2026-11-25): ESP-IDF in ~/.espressif/v6.1 but the extension never set
+	// up (eim_idf.json lists no install) — espIdf.buildDevice failed with "Something went wrong".
+	for (const [how, configure] of [
+		['roboagent.esp32.idfPath', (h: FakeHost, idf: string) => { h.settings.set('roboagent.esp32.idfPath', idf); }],
+		['$IDF_PATH', (_h: FakeHost, idf: string) => { process.env['IDF_PATH'] = idf; }],
+		['the default folder with an empty eim_idf.json', async (_h: FakeHost, _idf: string) => {
+			await fs.promises.mkdir(path.join(root, '.espressif', 'tools'), { recursive: true });
+			await fs.promises.writeFile(path.join(root, '.espressif', 'tools', 'eim_idf.json'), JSON.stringify({ idfInstalled: [], idfSelectedId: '' }));
+		}],
+	] as const) {
+		test(`build runs idf.py, not espIdf.buildDevice, when the extension is installed but ESP-IDF was found via ${how}`, async () => {
+			host.installed.add('espressif.esp-idf-extension');
+			const idf = await fakeIdf(how.startsWith('the default') ? path.join('.espressif', 'v6.1', 'esp-idf') : 'esp-idf');
+			await configure(host, idf);
+			await new Esp32ModeProvider(host).build();
+			assert.deepStrictEqual(host.commands, [], 'the unconfigured extension must not be asked to build');
+			assert.strictEqual(host.tasks.length, 1);
+			assert.ok(host.tasks[0].command.startsWith(`IDF_PATH=${idf};`), host.tasks[0].command);
+			assert.ok(host.tasks[0].command.endsWith('idf.py build'), host.tasks[0].command);
+			assert.ok(host.logs.some(l => l.includes('not set up with')), host.logs.join('\n'));
+		});
+	}
+
+	// Review finding: the choice must follow the checkout, not how it was found. A sourced export.sh
+	// ($IDF_PATH) pointing at the extension's own checkout still builds through the extension.
+	test('build goes through the extension when $IDF_PATH is the checkout the extension is set up with', async () => {
+		host.installed.add('espressif.esp-idf-extension');
+		const idf = await fakeIdf();
+		process.env['IDF_PATH'] = idf;
+		host.settings.set('idf.currentSetup', idf + path.sep);
+		await new Esp32ModeProvider(host).build();
+		assert.deepStrictEqual(host.commands.map(c => c.id), ['espIdf.buildDevice']);
+		assert.strictEqual(host.tasks.length, 0);
+	});
+
+	test('debug with an extension that is not set up skips its session and flashes from a terminal', async () => {
+		host.installed.add('espressif.esp-idf-extension');
+		const idf = await fakeIdf();
+		host.settings.set('roboagent.esp32.idfPath', idf);
+		host.autoPick = 'Flash + Monitor';
+		await new Esp32ModeProvider(host).debug();
+		assert.strictEqual(host.debugSessions.length, 0, 'no gdbtarget session through an unconfigured extension');
+		assert.deepStrictEqual(host.commands, []);
+		assert.ok(host.messages[0].message.includes('not set up with this ESP-IDF'), host.messages[0].message);
+		assert.strictEqual(host.terminals.length, 1);
+		assert.ok(host.terminals[0].command.startsWith(`IDF_PATH=${idf};`), host.terminals[0].command);
 	});
 
 	test('build falls back to idf.py in an IDF-activated task', async () => {
@@ -424,7 +482,7 @@ suite('ESP32 provider', () => {
 		await new Esp32ModeProvider(host).build();
 		assert.strictEqual(host.tasks.length, 1);
 		assert.strictEqual(host.tasks[0].command, `IDF_PATH=${idf}; export IDF_PATH; . "$IDF_PATH/export.sh" >/dev/null && idf.py build`);
-		assert.deepStrictEqual(host.tasks[0].problemMatchers, ['$roboagent-gcc']);
+		assert.deepStrictEqual(host.tasks[0].problemMatchers, ['$roboagent-gcc', '$roboagent-cmake']);
 	});
 
 	test('build finds an ESP-IDF registered by the Installation Manager (eim_idf.json under ~/.espressif)', async () => {
@@ -483,7 +541,7 @@ suite('ESP32 provider', () => {
 
 	test('debug: extension session first, flash+monitor fallback when it does not start', async () => {
 		host.installed.add('espressif.esp-idf-extension');
-		host.settings.set('roboagent.esp32.idfPath', await fakeIdf());
+		host.settings.set('idf.currentSetup', await fakeIdf());
 		host.debugStarts = false;
 		host.autoPick = 'Flash + Monitor';
 		await new Esp32ModeProvider(host).debug();

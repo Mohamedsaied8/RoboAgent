@@ -8,7 +8,7 @@ import { isFalsyOrWhitespace } from '../../../../base/common/strings.js';
 import * as resources from '../../../../base/common/resources.js';
 import { IJSONSchema } from '../../../../base/common/jsonSchema.js';
 import { IExtensionPointUser, ExtensionMessageCollector, ExtensionsRegistry } from '../../extensions/common/extensionsRegistry.js';
-import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, ContextKeyExpression } from '../../../../platform/contextkey/common/contextkey.js';
 import { MenuId, MenuRegistry, IMenuItem, ISubmenuItem } from '../../../../platform/actions/common/actions.js';
 import { URI } from '../../../../base/common/uri.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
@@ -979,6 +979,20 @@ interface IRegisteredSubmenu {
  */
 const ROBOAGENT_SINGLE_FILE_COMMANDS = new Set(['cmake.compileFile', 'C_Cpp.BuildAndDebugFile', 'C_Cpp.BuildAndRunFile', 'C_Cpp.AddDebugConfiguration']);
 const ROBOAGENT_NOT_FIRMWARE_MODE = ContextKeyExpr.and(ContextKeyExpr.notEquals('roboagent.mode', 'stm32'), ContextKeyExpr.notEquals('roboagent.mode', 'esp32'));
+/** RoboAgent: the ESP-IDF extension's editor-title button ("Search Error Hint") belongs to ESP32 mode only. */
+const ROBOAGENT_ESP32_ONLY_COMMANDS = new Set(['espIdf.searchError']);
+const ROBOAGENT_ESP32_MODE = ContextKeyExpr.equals('roboagent.mode', 'esp32');
+
+/** RoboAgent: the extra `when` a bundled extension's editor-title item gets, if any. */
+export function roboAgentEditorTitleCondition(command: string): ContextKeyExpression | undefined {
+	if (ROBOAGENT_SINGLE_FILE_COMMANDS.has(command)) {
+		return ROBOAGENT_NOT_FIRMWARE_MODE;
+	}
+	if (ROBOAGENT_ESP32_ONLY_COMMANDS.has(command)) {
+		return ROBOAGENT_ESP32_MODE;
+	}
+	return undefined;
+}
 
 const _submenus = new Map<string, IRegisteredSubmenu>();
 
@@ -1149,8 +1163,9 @@ menusExtensionPoint.setHandler(extensions => {
 				}
 
 				item.when = ContextKeyExpr.deserialize(menuItem.when);
-				if (schema.isMenuItem(menuItem) && (menu.id === MenuId.EditorTitle || menu.id === MenuId.EditorTitleRun) && ROBOAGENT_SINGLE_FILE_COMMANDS.has(menuItem.command)) {
-					item.when = ContextKeyExpr.and(item.when, ROBOAGENT_NOT_FIRMWARE_MODE);
+				const roboAgentCondition = schema.isMenuItem(menuItem) && (menu.id === MenuId.EditorTitle || menu.id === MenuId.EditorTitleRun) ? roboAgentEditorTitleCondition(menuItem.command) : undefined;
+				if (roboAgentCondition) {
+					item.when = ContextKeyExpr.and(item.when, roboAgentCondition);
 				}
 				_menuRegistrations.add(MenuRegistry.appendMenuItem(menu.id, item));
 			}

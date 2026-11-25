@@ -237,6 +237,32 @@ export async function discoverEspIdf(options: EspIdfDiscoveryOptions = {}): Prom
 		?? await firstFound(await conventionalCheckouts(home, platform), 'home', found);
 }
 
+/**
+ * The ESP-IDF checkouts the ESP-IDF *extension* is set up with — its `idf.currentSetup` and the
+ * Installation Manager's `eim_idf.json` — as real paths. The extension can only build with these.
+ */
+export async function espIdfExtensionCheckouts(options: Pick<EspIdfDiscoveryOptions, 'extensionSetup' | 'eimJsonPath' | 'env' | 'platform'> = {}): Promise<string[]> {
+	const env = options.env ?? process.env;
+	const home = env['HOME'] ?? os.homedir();
+	const candidates = [options.extensionSetup?.trim(), ...await eimCheckouts(options.eimJsonPath, home, options.platform ?? process.platform)];
+	const result: string[] = [];
+	for (const candidate of candidates) {
+		if (candidate && await isEspIdfCheckout(candidate)) {
+			result.push(await realPath(candidate));
+		}
+	}
+	return result;
+}
+
+/** `fs.realpath`, or the resolved path itself when it cannot be resolved. */
+export async function realPath(p: string): Promise<string> {
+	try {
+		return await fs.promises.realpath(p);
+	} catch {
+		return path.resolve(p);
+	}
+}
+
 async function firstFound(candidates: string[], source: EspIdfSource, found: (p: string, source: EspIdfSource) => Promise<EspIdfInstallation | undefined>): Promise<EspIdfInstallation | undefined> {
 	for (const candidate of candidates) {
 		const hit = await found(candidate, source);

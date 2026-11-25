@@ -20,6 +20,9 @@ suite('ESP32 generator', () => {
 			assert.doesNotThrow(() => JSON.parse(files.get(name)!), name);
 		}
 		assert.strictEqual(JSON.parse(files.get('.vscode/settings.json')!)['roboagent.mode'], 'esp32');
+		// Review finding: without this the ESP-IDF extension exports IDF_TARGET=esp32 and builds an
+		// ESP32-S3 project for the plain ESP32.
+		assert.deepStrictEqual(JSON.parse(files.get('.vscode/settings.json')!)['idf.customExtraVars'], { IDF_TARGET: 'esp32s3' });
 	});
 
 	test('blink template and serial port setting', () => {

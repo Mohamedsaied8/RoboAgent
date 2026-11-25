@@ -8,9 +8,8 @@
  *
  *  Emits the canonical ESP-IDF layout (`CMakeLists.txt` including project.cmake, `main/`
  *  component, `sdkconfig.defaults` pinning CONFIG_IDF_TARGET) plus .vscode files for the
- *  bundled ESP-IDF extension and cpptools. `idf.py set-target` is run by the provider when an
- *  IDF environment is available; the sdkconfig.defaults makes the first build pick the chip
- *  even when it is not.
+ *  bundled ESP-IDF extension and cpptools. The sdkconfig.defaults makes the first `idf.py build`
+ *  pick the chip, so Create does not need to run `idf.py set-target`.
  *--------------------------------------------------------------------------------------------*/
 
 import { FileSet, jsonFile, toIdentifier } from '../scaffold';
@@ -63,6 +62,9 @@ CONFIG_IDF_TARGET="${spec.chip}"
 	files.set('.vscode/settings.json', jsonFile({
 		'roboagent.mode': 'esp32',
 		...(spec.port ? { 'roboagent.esp32.port': spec.port } : {}),
+		// Without an sdkconfig the ESP-IDF extension exports IDF_TARGET=esp32 for its build, which
+		// overrides sdkconfig.defaults: pin the chip for it as well.
+		'idf.customExtraVars': { IDF_TARGET: spec.chip },
 		'files.associations': { 'sdkconfig': 'ini', 'sdkconfig.defaults': 'ini' },
 		'C_Cpp.default.compileCommands': '${workspaceFolder}/build/compile_commands.json',
 		'C_Cpp.default.compilerPath': '',
@@ -85,7 +87,7 @@ CONFIG_IDF_TARGET="${spec.chip}"
 	files.set('.vscode/tasks.json', jsonFile({
 		version: '2.0.0',
 		tasks: [
-			{ label: 'ESP-IDF: Build', type: 'shell', command: esp32IdfCommand('build'), group: { kind: 'build', isDefault: true }, problemMatcher: ['$roboagent-gcc'] },
+			{ label: 'ESP-IDF: Build', type: 'shell', command: esp32IdfCommand('build'), group: { kind: 'build', isDefault: true }, problemMatcher: ['$roboagent-gcc', '$roboagent-cmake'] },
 			{ label: 'ESP-IDF: Flash', type: 'shell', command: esp32IdfCommand('flash', spec.port), problemMatcher: [] },
 			{ label: 'ESP-IDF: Monitor', type: 'shell', command: esp32IdfCommand('monitor', spec.port), problemMatcher: [], isBackground: true },
 			{ label: 'ESP-IDF: Set target', type: 'shell', command: esp32IdfCommand(`set-target ${spec.chip}`), problemMatcher: [] },

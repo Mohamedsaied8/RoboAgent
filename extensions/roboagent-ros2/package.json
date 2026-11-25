@@ -238,14 +238,9 @@
 			],
 			"editor/title": [
 				{
-					"command": "roboagent.build",
-					"group": "navigation@1",
-					"when": "(roboagent.mode == stm32 || roboagent.mode == esp32) && (resourceLangId == c || resourceLangId == cpp || resourceLangId == cmake || resourceLangId == makefile || resourceFilename == CMakeLists.txt)"
-				},
-				{
 					"command": "roboagent.colconBuild",
 					"group": "navigation@1",
-					"when": "roboagent.mode != stm32 && roboagent.mode != esp32 && (resourceFilename == package.xml || resourceFilename == CMakeLists.txt || resourceFilename =~ /.*\\.launch\\.py$/)"
+					"when": "roboagent.mode != stm32 && roboagent.mode != esp32 && roboagent.mode != ros2 && (resourceFilename == package.xml || resourceFilename == CMakeLists.txt || resourceFilename =~ /.*\\.launch\\.py$/)"
 				},
 				{
 					"command": "roboagent.cmakeBuild",
@@ -259,11 +254,6 @@
 				}
 			],
 			"editor/title/run": [
-				{
-					"command": "roboagent.debug",
-					"group": "navigation@0",
-					"when": "(roboagent.mode == stm32 || roboagent.mode == esp32) && (resourceLangId == c || resourceLangId == cpp || resourceLangId == cmake || resourceLangId == makefile || resourceFilename == CMakeLists.txt)"
-				},
 				{
 					"command": "roboagent.runLaunch",
 					"group": "navigation@1",
@@ -329,6 +319,20 @@
 				}
 			}
 		],
+		"configurationDefaults": {
+			"cmake.configureOnOpen": false,
+			"cmake.options.advanced": {
+				"build": {
+					"statusBarVisibility": "hidden"
+				},
+				"launch": {
+					"statusBarVisibility": "hidden"
+				},
+				"debug": {
+					"statusBarVisibility": "hidden"
+				}
+			}
+		},
 		"problemMatchers": [
 			{
 				"name": "colcon",
@@ -363,6 +367,28 @@
 					"severity": 4,
 					"message": 5
 				}
+			},
+			{
+				"name": "roboagent-cmake",
+				"owner": "roboagent-cmake",
+				"source": "CMake",
+				"fileLocation": [
+					"autoDetect",
+					"${workspaceFolder}"
+				],
+				"pattern": [
+					{
+						"regexp": "^CMake (Error|Warning)(?: \\(dev\\))? at (.+?):(\\d+)(?: \\(([\\w.-]+)\\))?:\\s*$",
+						"severity": 1,
+						"file": 2,
+						"line": 3,
+						"code": 4
+					},
+					{
+						"regexp": "^\\s+(\\S.*)$",
+						"message": 1
+					}
+				]
 			}
 		],
 		"debuggers": [
@@ -578,7 +604,7 @@
 				"roboagent.stm32.toolchainPath": {
 					"type": "string",
 					"default": "",
-					"scope": "machine-overridable",
+					"scope": "machine",
 					"markdownDescription": "%config.stm32.toolchainPath%"
 				},
 				"roboagent.stm32.openocdInterface": {
@@ -595,7 +621,7 @@
 				"roboagent.esp32.idfPath": {
 					"type": "string",
 					"default": "",
-					"scope": "machine-overridable",
+					"scope": "machine",
 					"markdownDescription": "%config.esp32.idfPath%"
 				},
 				"roboagent.esp32.port": {

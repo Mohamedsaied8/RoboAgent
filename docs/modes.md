@@ -61,7 +61,8 @@ Files are staged in a temp directory and moved into place only at the end.
 
 **Build** — acts on the STM32 project holding the active file (else the only one in the
 workspace, else a pick), so an STM32CubeIDE workspace with projects in subfolders works. Runs in
-the *RoboAgent: STM32 build* terminal, errors in Problems via `$roboagent-gcc`:
+the *RoboAgent: STM32 build* terminal, errors in Problems via `$roboagent-gcc` (compiler) and
+`$roboagent-cmake` (CMake configure errors and warnings):
 
 | Project | Command (in the project folder) |
 |---|---|
@@ -76,11 +77,15 @@ A CMakeLists.txt that does not `set(CMAKE_TOOLCHAIN_FILE …)` gets the toolchai
 STM32CubeIDE install; an off-`PATH` toolchain is put first on the task's `PATH` and, for projects
 that read it (RoboAgent's), passed as `-DTOOLCHAIN_PATH=` — never written into the project.
 
-In STM32 / ESP32 mode the editor-title buttons of C/C++/CMake files are the project **Build** and
-**Debug**, and *Build/Run Active File* forward to them: firmware is never compiled as a single host
-file. The bundled extensions' single-file buttons (CMake Tools *Compile Active File*, C/C++ *Run /
-Debug C/C++ File*, *Add Debug Configuration*) are hidden in those modes
-(`src/vs/workbench/services/actions/common/menusExtensionPoint.ts`).
+Build and Debug live in one place: the title-bar toolbar next to **Create** (and their
+keybindings). The editor title has no second Build/Debug in any mode, and *Build/Run Active File*
+forward to the project Build/Debug in STM32 / ESP32 mode: firmware is never compiled as a single
+host file. The bundled extensions' single-file buttons (CMake Tools *Compile Active File*, C/C++
+*Run / Debug C/C++ File*, *Add Debug Configuration*) are hidden in those modes, and the ESP-IDF
+extension's *Search Error Hint* shows in ESP32 mode only
+(`src/vs/workbench/services/actions/common/menusExtensionPoint.ts`). CMake Tools' own status-bar
+Build / Launch / Debug are hidden and it does not configure (or ask for a kit) when a folder opens
+(`configurationDefaults` in the roboagent-ros2 manifest).
 
 **Toolchain check** — the host tools STM32 mode needs cannot be bundled, so Create, Build and
 Debug first probe for them: `arm-none-eabi-gcc` (on `PATH`, in `roboagent.stm32.toolchainPath`,
@@ -120,8 +125,9 @@ from the palette (`roboagent.stm32.ensureExtension`) to use it instead of the bu
 **Create** — name → location → chip (`esp32`, `esp32s2`, `esp32s3`, `esp32c3`, `esp32c6`,
 `esp32h2`) → template (`hello_world`, `blink`, or hand over to the bundled ESP-IDF extension's
 *New Project* wizard). Generates the IDF layout (`CMakeLists.txt`, `main/`, `sdkconfig.defaults`
-pinning `CONFIG_IDF_TARGET`), `.vscode/*`, and runs `idf.py set-target <chip>` in a terminal when
-an ESP-IDF installation is found (see *ESP-IDF check* below).
+pinning `CONFIG_IDF_TARGET`) and `.vscode/*` (with `idf.customExtraVars.IDF_TARGET` set to the chip,
+so the ESP-IDF extension builds for it too), then opens the folder. No `idf.py set-target` is
+run: `sdkconfig.defaults` already makes the first build pick the chip.
 
 **ESP-IDF check** — the ESP-IDF *extension* ships with RoboAgent, the ESP-IDF *toolchain* does
 not. Create, Build and Debug therefore first look for an installation, in this order:
@@ -135,17 +141,20 @@ when it has `tools/idf.py`. When nothing is found, a notification says so and of
 |---|---|
 | **Install ESP-IDF…** | Opens the ESP-IDF Installation Manager through the bundled extension (`espIdf.installManager` downloads and launches it); without the extension, opens its download page. Create/Build/Debug are not continued — run them again once the install finishes; the new install is picked up from `eim_idf.json`. |
 | **Use Existing Install…** | Folder picker; the folder must contain `tools/idf.py`. Stored in `roboagent.esp32.idfPath` (user settings) and the action continues. |
-| **Create Anyway** (Create only) | Scaffolds the project without running `idf.py set-target`; `sdkconfig.defaults` still pins the chip. |
+| **Create Anyway** (Create only) | Scaffolds the project anyway; it builds once ESP-IDF is installed. |
 
 Build and Debug do nothing until an installation exists. The same check runs on demand as
 *RoboAgent: ESP32: Check ESP-IDF Installation* (`roboagent.esp32.ensureIdf`, palette in ESP32
 mode), and the result is logged to the RoboAgent output channel at startup.
 
-**Build** — `espIdf.buildDevice` (ESP-IDF extension) when installed; otherwise
-`. $IDF_PATH/export.sh && idf.py build` as a task.
+**Build** — `espIdf.buildDevice` when the ESP-IDF extension is set up with the checkout in use (its
+`idf.currentSetup`, or one registered in the Installation Manager's `eim_idf.json`); otherwise
+`. $IDF_PATH/export.sh && idf.py build` as a task (errors via `$roboagent-gcc` / `$roboagent-cmake`).
+The extension cannot build with a checkout it was not set up with.
 
-**Debug** — the extension's `gdbtarget` session; if it does not start (no board / no OpenOCD),
-offers **Flash + Monitor** (`espIdf.buildFlashMonitor`, or `idf.py -p <port> flash monitor`).
+**Debug** — the extension's `gdbtarget` session when it is set up as above; if it does not start
+(no board / no OpenOCD), or the extension is not set up, offers **Flash + Monitor**
+(`espIdf.buildFlashMonitor`, or `idf.py -p <port> flash monitor`).
 
 ## ROS2 mode
 
@@ -162,7 +171,10 @@ offline.
 
 **Build** — `colcon build --symlink-install` (the toolkit's existing command line), scoped with
 `--packages-select` to the package of the active file, with `ROS_DISTRO` from
-`roboagent.ros2.distro` (or the newest `/opt/ros/*`).
+`roboagent.ros2.distro` (or the newest `/opt/ros/*`). Compiler errors reach Problems through
+`$colcon`; CMake errors and warnings are read from colcon's `log/latest_build/<pkg>/stderr.log` after
+every colcon build and placed in the package's own files (its source folder comes from the build
+folder's `CMakeCache.txt`), see `src/cmakeDiagnostics.ts`.
 
 **Debug** — pick a built node from `install/*/lib/*` (Python nodes → debugpy, C++ → lldb-dap/gdb
 via the existing `roboagent.debugNode` path).

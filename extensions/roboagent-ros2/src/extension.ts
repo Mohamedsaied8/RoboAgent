@@ -14,6 +14,7 @@
 
 import * as vscode from 'vscode';
 import { registerCommands } from './commands';
+import { registerColconProblems } from './colconProblems';
 import { registerColconTasks } from './colconTasks';
 import { registerCmake } from './cmake';
 import { registerDebug } from './debug';
@@ -34,6 +35,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(
 		registerNewProject(context),
 		registerColconTasks(),
+		registerColconProblems(),
 		...registerCommands(context),
 		...registerDebug(context),
 	);

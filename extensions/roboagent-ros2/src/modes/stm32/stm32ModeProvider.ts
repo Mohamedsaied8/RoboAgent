@@ -221,7 +221,7 @@ export class Stm32ModeProvider implements ModeProvider {
 		// A toolchain off PATH (setting, well-known location, STM32CubeIDE) also goes first on PATH, for
 		// projects whose toolchain file / makefiles call plain `arm-none-eabi-gcc`.
 		const env = tools.toolchainDir ? { PATH: `${tools.toolchainDir}${path.delimiter}${process.env['PATH'] ?? ''}` } : undefined;
-		const result = await this.host.runShellTask({ name: 'RoboAgent: STM32 build', command: commands.build, cwd: root, problemMatchers: ['$roboagent-gcc'], group: 'build', env });
+		const result = await this.host.runShellTask({ name: 'RoboAgent: STM32 build', command: commands.build, cwd: root, problemMatchers: ['$roboagent-gcc', '$roboagent-cmake'], group: 'build', env });
 		return result.exitCode;
 	}
 

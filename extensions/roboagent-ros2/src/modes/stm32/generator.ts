@@ -489,7 +489,7 @@ function tasksJson(spec: Stm32ProjectSpec, id: string): string {
 	if (cmds.configure) {
 		tasks.push({ label: 'STM32: Configure', type: 'shell', command: cmds.configure, problemMatcher: [] });
 	}
-	tasks.push({ label: 'STM32: Build', type: 'shell', command: cmds.build, group: { kind: 'build', isDefault: true }, problemMatcher: ['$roboagent-gcc'] });
+	tasks.push({ label: 'STM32: Build', type: 'shell', command: cmds.build, group: { kind: 'build', isDefault: true }, problemMatcher: ['$roboagent-gcc', '$roboagent-cmake'] });
 	tasks.push({ label: 'STM32: Clean', type: 'shell', command: cmds.clean, problemMatcher: [] });
 	if (spec.kind === 'executable') {
 		tasks.push({
