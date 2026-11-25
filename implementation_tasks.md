@@ -8,6 +8,27 @@ plain `git commit` works from here on; `--no-verify` is no longer needed.
 
 ---
 
+## Manual acceptance test — 2026-11-25
+
+The dev build was run against the fixtures (STM32 library + wizard project, ESP32 wizard project,
+ROS2 `ros2ws`) and driven over CDP. Fixes, each with regression tests and re-checked in the app;
+code + security reviews by fresh-context agents, findings fixed and re-reviewed:
+
+| # | Found | Fix | Status |
+|---|---|---|---|
+| A1 | ESP32 Build failed ("Something went wrong"): `espIdf.buildDevice` used with an ESP-IDF the extension was never set up with | Extension only when the checkout is its own (`idf.currentSetup` / `eim_idf.json`, compared by real path), else `idf.py`; Create no longer runs a `set-target` the window switch killed; `idf.customExtraVars.IDF_TARGET` pins non-esp32 chips for the extension | ☑ |
+| A2 | CMake errors never reached Problems (colcon: paths relative to each package) | `cmakeDiagnostics.ts` + `colconProblems.ts` (colcon logs → Problems, source dir from `CMakeCache.txt`), `$roboagent-cmake` matcher for STM32/ESP32 | ☑ |
+| A3 | First run showed "Get started with VS Code" with Copilot steps and an "Agents app is deprecated" banner | RoboAgent walkthrough with a RoboAgent sign-in step; banner not imported | ☑ |
+| A4 | Sign-in redirected to a 127.0.0.1 server; Cancel did nothing; progress toast never closed | `roboagent://auth/callback` only (`BrowserSignIn`: state checked first, forged callbacks ignored), handler registered before window handlers, Linux registers the scheme itself (`urlSchemeRegistration.ts`), working Cancel | ☑ (verified end to end) |
+| A5 | Chat asked to sign in again after restart: the app pointed at a Supabase project that no longer exists | Live project URL + publishable key | ☑ |
+| A6 | Build / Debug three times (title bar, editor title, CMake Tools status bar); CMake Tools kit picker on open; ESP-IDF button in STM32 mode | Title-bar toolbar only; CMake Tools defaults; `espIdf.searchError` gated on ESP32 mode | ☑ |
+| A7 | STM32 Create makes no CMSIS headers (`stm32f1xx.h` missing) | Download ST's CMSIS device + core packs at Create (pinned, SHA-256) — decided 2026-11-25 | ☐ |
+| A8 | Microsoft C/C++ extension license notice in a fork | Replace with clangd + Cortex-Debug — decided 2026-11-25 | ☐ |
+| A9 | ESP-IDF extension asks "activate anyway?" in non-ESP32 projects | Keep it inactive outside ESP32 projects — decided 2026-11-25 | ☐ |
+| A10 | Minor: wizard Location step unnumbered; "Not indexed" (ROS2 index) shown in STM32 mode; chat sends no workspace context | — | ☐ |
+
+---
+
 ## REQ-7 — Firmware Agents: Dev · Debug · Test (2026-10-15)
 
 Spec: `requirements_docs/roboagent_req_firmware_agents.md`. Detail: `implementation.md` → REQ-7.
