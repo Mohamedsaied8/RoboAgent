@@ -154,6 +154,11 @@
 				"category": "RoboAgent"
 			},
 			{
+				"command": "roboagent.stm32.addCmsis",
+				"title": "%command.stm32.addCmsis%",
+				"category": "RoboAgent"
+			},
+			{
 				"command": "roboagent.stm32.create",
 				"title": "%command.stm32.create%",
 				"category": "RoboAgent",
@@ -229,6 +234,10 @@
 				},
 				{
 					"command": "roboagent.stm32.ensureToolchain",
+					"when": "roboagent.mode == stm32"
+				},
+				{
+					"command": "roboagent.stm32.addCmsis",
 					"when": "roboagent.mode == stm32"
 				},
 				{
@@ -321,6 +330,7 @@
 		],
 		"configurationDefaults": {
 			"cmake.configureOnOpen": false,
+			"cmake.enableAutomaticKitScan": false,
 			"cmake.options.advanced": {
 				"build": {
 					"statusBarVisibility": "hidden"

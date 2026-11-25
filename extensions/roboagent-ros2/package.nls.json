@@ -46,6 +46,7 @@
 	"command.debug": "Debug Project (current mode)",
 	"command.stm32.ensureExtension": "STM32: Install Debug Extension (Cortex-Debug)",
 	"command.stm32.ensureToolchain": "STM32: Check Toolchain (arm-none-eabi-gcc, CMake, OpenOCD, GDB)",
+	"command.stm32.addCmsis": "STM32: Add CMSIS Headers",
 	"command.stm32.create": "STM32: Create Project",
 	"command.stm32.build": "STM32: Build Project (CMake + make)",
 	"command.stm32.debug": "STM32: Build if Needed, Flash and Debug",

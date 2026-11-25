@@ -17,7 +17,11 @@ suite('STM32 generator', () => {
 		const files = generateStm32Project(spec());
 		const cmake = files.get('CMakeLists.txt')!;
 		assert.ok(cmake.includes('set(MCU_FLAGS -mcpu=cortex-m7 -mthumb -mfpu=fpv5-d16 -mfloat-abi=hard)'), cmake);
-		assert.ok(cmake.includes('add_compile_definitions(STM32H743xx USE_HAL_DRIVER)'));
+		// No USE_HAL_DRIVER: with it the CMSIS device header pulls in the HAL, which is not in the project.
+		assert.ok(cmake.includes('add_compile_definitions(STM32H743xx)'));
+		assert.ok(cmake.includes('if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Drivers/CMSIS/Include)'));
+		assert.ok(cmake.includes('Drivers/CMSIS/Device/ST/STM32H7xx/Include'));
+		assert.ok(cmake.includes('Core/Src/system_stm32h7xx.c'));
 		assert.ok(cmake.includes('add_executable(${PROJECT_NAME}.elf'));
 		assert.ok(cmake.includes('-TSTM32H743ZIT6_FLASH.ld') || cmake.includes('STM32H743ZIT6_FLASH.ld'));
 		assert.ok(files.has('cmake/arm-none-eabi.cmake'));

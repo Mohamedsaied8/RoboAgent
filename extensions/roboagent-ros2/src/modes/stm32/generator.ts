@@ -83,7 +83,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(MCU_FLAGS ${flags})
 add_compile_options(\${MCU_FLAGS} -Wall -Wextra -ffunction-sections -fdata-sections -fno-common)
 add_compile_options("$<$<CONFIG:Debug>:-Og;-g3>")
-add_compile_definitions(${t.define} USE_HAL_DRIVER)
+add_compile_definitions(${t.define})
 `;
 	if (spec.kind === 'library') {
 		return common + `
@@ -101,6 +101,7 @@ add_executable(\${PROJECT_NAME}.elf
   startup_${t.define.toLowerCase()}.s
 )
 target_include_directories(\${PROJECT_NAME}.elf PRIVATE Core/Inc)
+${cmsisCMakeBlock(t)}
 target_link_options(\${PROJECT_NAME}.elf PRIVATE
   \${MCU_FLAGS}
   -T\${LINKER_SCRIPT}
@@ -162,7 +163,7 @@ OBJCOPY    := $(PREFIX)objcopy
 SIZE       := $(PREFIX)size
 
 MCU_FLAGS  := ${flags}
-CFLAGS     := $(MCU_FLAGS) -Wall -Wextra -Og -g3 -ffunction-sections -fdata-sections -fno-common -D${t.define} -DUSE_HAL_DRIVER
+CFLAGS     := $(MCU_FLAGS) -Wall -Wextra -Og -g3 -ffunction-sections -fdata-sections -fno-common -D${t.define}
 `;
 	if (spec.kind === 'library') {
 		return head + `CFLAGS     += -IInc
@@ -185,6 +186,7 @@ clean:
 `;
 	}
 	return head + `CFLAGS     += -ICore/Inc
+${cmsisMakeLine(t)}
 LDSCRIPT   := ${t.part}_FLASH.ld
 LDFLAGS    := $(MCU_FLAGS) -T$(LDSCRIPT) --specs=nano.specs --specs=nosys.specs -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref
 SRCS       := $(wildcard Core/Src/*.c)
@@ -218,6 +220,58 @@ clean:
 `;
 }
 
+// --- CMSIS ------------------------------------------------------------------
+
+const CMSIS_BEGIN = '# CMSIS core + device headers (Drivers/CMSIS)';
+
+/** The CMake lines that use Drivers/CMSIS when it is there (it is optional: the project builds without it). */
+export function cmsisCMakeBlock(t: Pick<ResolvedStm32Target, 'family'>): string {
+	const device = `Drivers/CMSIS/Device/ST/STM32${t.family.id}xx/Include`;
+	return `
+${CMSIS_BEGIN}, added at Create or with "RoboAgent: STM32: Add CMSIS Headers".
+if(EXISTS \${CMAKE_CURRENT_SOURCE_DIR}/Drivers/CMSIS/Include)
+  target_include_directories(\${PROJECT_NAME}.elf PRIVATE Drivers/CMSIS/Include ${device})
+  if(EXISTS \${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/system_${t.family.cmsisPrefix}.c)
+    target_sources(\${PROJECT_NAME}.elf PRIVATE Core/Src/system_${t.family.cmsisPrefix}.c)
+  endif()
+endif()
+`;
+}
+
+/** The Makefile line that adds the Drivers/CMSIS include folders when they exist (system_*.c is in Core/Src/*.c). */
+export function cmsisMakeLine(t: Pick<ResolvedStm32Target, 'family'>): string {
+	return `${CMSIS_BEGIN}, added at Create or with "RoboAgent: STM32: Add CMSIS Headers".
+CFLAGS     += $(if $(wildcard Drivers/CMSIS/Include),-IDrivers/CMSIS/Include -IDrivers/CMSIS/Device/ST/STM32${t.family.id}xx/Include,)`;
+}
+
+/**
+ * Bring the build file of a project RoboAgent generated before CMSIS support up to date: add the
+ * CMSIS lines and drop USE_HAL_DRIVER (with it, the device header includes the HAL, which is not
+ * in the project). Returns undefined when the file is not RoboAgent's or already has them.
+ */
+export function upgradeGeneratedBuildFile(kind: 'cmake' | 'make', text: string, t: Pick<ResolvedStm32Target, 'family' | 'define'>): string | undefined {
+	if (!text.includes(MARKER) || text.includes(CMSIS_BEGIN)) {
+		return undefined;
+	}
+	const crlf = text.includes('\r\n');
+	let lf = text.replace(/\r\n/g, '\n');
+	if (kind === 'cmake') {
+		const anchor = 'target_include_directories(${PROJECT_NAME}.elf PRIVATE Core/Inc)\n';
+		if (!lf.includes(anchor)) {
+			return undefined;
+		}
+		lf = lf.replace(/^(add_compile_definitions\(.*)$/m, line => line.replace(/\s*\bUSE_HAL_DRIVER\b/g, '').replace('( ', '('));
+		lf = lf.replace(anchor, anchor + cmsisCMakeBlock(t));
+	} else {
+		const anchor = 'CFLAGS     += -ICore/Inc\n';
+		if (!lf.includes(anchor)) {
+			return undefined;
+		}
+		lf = lf.replace(/[ \t]+-DUSE_HAL_DRIVER(?:=\S*)?(?=[ \t\n])/g, '').replace(anchor, anchor + cmsisMakeLine(t) + '\n');
+	}
+	return crlf ? lf.replace(/\n/g, '\r\n') : lf;
+}
+
 // --- Sources ----------------------------------------------------------------
 
 function mainHeader(t: ResolvedStm32Target): string {
@@ -227,7 +281,11 @@ function mainHeader(t: ResolvedStm32Target): string {
 
 #include <stdint.h>
 
-/* Add "#include \\"${t.family.cmsisPrefix}_hal.h\\"" once the STM32Cube HAL / CMSIS device pack is in the project. */
+/* CMSIS device header (RCC, GPIOA, …) from Drivers/CMSIS — added at Create, or later with
+ * "RoboAgent: STM32: Add CMSIS Headers". The project also builds without it. */
+#if __has_include("${t.family.cmsisPrefix}.h")
+#include "${t.family.cmsisPrefix}.h"
+#endif
 
 void Error_Handler(void);
 
@@ -239,9 +297,9 @@ function mainSource(spec: Stm32ProjectSpec, t: ResolvedStm32Target): string {
 	return `/* ${MARKER}
  * ${spec.name} — ${t.part} (${t.family.label}, ${t.core})
  *
- * This skeleton links and runs without vendor headers: it toggles a counter in an idle loop.
- * Replace the body with HAL/LL code once the CMSIS device pack for ${t.define} is added
- * (Core/Inc, Drivers/…) — the CMake flags, linker script and startup file already match the part.
+ * An idle loop to start from. With the CMSIS headers in Drivers/CMSIS (added at Create when
+ * they could be downloaded), main.h includes ${t.family.cmsisPrefix}.h, so the registers (RCC, GPIOA, …) are
+ * available, and the startup file calls SystemInit() before main().
  */
 #include "main.h"
 
@@ -249,7 +307,6 @@ static volatile uint32_t tick;
 
 int main(void)
 {
-    /* SystemInit()/HAL_Init() go here once the device pack is present. */
     for (;;) {
         tick++;
         for (volatile uint32_t i = 0; i < 100000u; i++) { __asm__ volatile ("nop"); }
@@ -355,7 +412,12 @@ SECTIONS
 
   . = ALIGN(4);
   .bss : { _sbss = .; __bss_start__ = _sbss; *(.bss) *(.bss*) *(COMMON) . = ALIGN(4); _ebss = .; __bss_end__ = _ebss; } >RAM
-
+${t.family.id === 'WB' ? `
+  /* STM32WB: ST's startup also initialises .MB_MEM2 (the radio's shared memory); empty unless used.
+     Use ST's stm32wb55xx_flash_cm4.ld (RAM_SHARED at 0x20030000) for the BLE / 802.15.4 stack. */
+  _siMB_MEM2 = LOADADDR(.MB_MEM2);
+  .MB_MEM2 : { . = ALIGN(4); _sMB_MEM2 = .; *(MB_MEM2) . = ALIGN(4); _eMB_MEM2 = .; } >RAM AT> FLASH
+` : ''}
   ._user_heap_stack : { . = ALIGN(8); PROVIDE(end = .); PROVIDE(_end = .); . = . + _Min_Heap_Size; . = . + _Min_Stack_Size; . = ALIGN(8); } >RAM
 
   /DISCARD/ : { libc.a (*) libm.a (*) libgcc.a (*) }
@@ -411,7 +473,7 @@ function cCppProperties(spec: Stm32ProjectSpec, t: ResolvedStm32Target): string 
 			compilerPath: 'arm-none-eabi-gcc',
 			compilerArgs: cpuFlags(t),
 			includePath: isExe ? ['${workspaceFolder}/Core/Inc', '${workspaceFolder}/Drivers/**'] : ['${workspaceFolder}/Inc'],
-			defines: [t.define, 'USE_HAL_DRIVER'],
+			defines: [t.define],
 			cStandard: 'c11',
 			cppStandard: 'c++17',
 			intelliSenseMode: 'linux-gcc-arm',

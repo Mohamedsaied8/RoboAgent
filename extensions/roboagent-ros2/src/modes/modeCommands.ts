@@ -18,6 +18,7 @@ import { ensureEspIdf, EnsureIdfOptions } from './esp32/ensureIdf';
 import { logError } from './output';
 import { ensureStm32Extension, EnsureExtensionOptions } from './stm32/ensureExtension';
 import { ensureStm32Toolchain, EnsureToolchainOptions } from './stm32/ensureToolchain';
+import { Stm32ModeProvider } from './stm32/stm32ModeProvider';
 
 type Verb = 'create' | 'build' | 'debug';
 
@@ -44,6 +45,12 @@ export function registerModeCommands(service: ModeService, providers: ReadonlyMa
 		reg('roboagent.build', dispatch('build')),
 		reg('roboagent.debug', dispatch('debug')),
 		reg('roboagent.stm32.ensureExtension', (options?: EnsureExtensionOptions) => run('STM32 extension setup', () => ensureStm32Extension(host, options))),
+		reg('roboagent.stm32.addCmsis', () => run('add CMSIS headers', async () => {
+			const stm32 = providers.get('stm32');
+			if (stm32 instanceof Stm32ModeProvider) {
+				await stm32.addCmsis();
+			}
+		})),
 		reg('roboagent.stm32.ensureToolchain', (options?: EnsureToolchainOptions) => run('STM32 toolchain check', () => ensureStm32Toolchain(host, options))),
 		reg('roboagent.esp32.ensureIdf', (options?: EnsureIdfOptions) => run('ESP-IDF installation check', () => ensureEspIdf(host, options))),
 	];

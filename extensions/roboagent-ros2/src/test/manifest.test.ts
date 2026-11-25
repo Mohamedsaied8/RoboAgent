@@ -43,9 +43,10 @@ suite('Extension manifest', () => {
 		assert.deepStrictEqual(table, { stm32: [], esp32: [], ros2: [] });
 	});
 
-	test('CMake Tools: no status-bar build / launch / debug and no configure (kit prompt) on open', () => {
+	test('CMake Tools: no status-bar build / launch / debug, no configure (kit prompt) on open, no kit scan (reconfigure prompt)', () => {
 		assert.deepStrictEqual(manifest.contributes.configurationDefaults, {
 			'cmake.configureOnOpen': false,
+			'cmake.enableAutomaticKitScan': false,
 			'cmake.options.advanced': {
 				build: { statusBarVisibility: 'hidden' },
 				launch: { statusBarVisibility: 'hidden' },

@@ -59,6 +59,23 @@ placeholder, `Core/Src/main.c`, `Core/Inc/main.h`, `.vscode/{c_cpp_properties,la
 `README.md`. Library: `add_library(... STATIC ...)`, `Inc/`, `Src/`, no main/linker/startup.
 Files are staged in a temp directory and moved into place only at the end.
 
+**CMSIS headers** — an executable project then gets the CMSIS core headers (Arm) and its family's
+device headers (ST) in `Drivers/CMSIS/`, ST's real `startup_<device>.s` in place of the placeholder,
+and `Core/Src/system_<family>.c`, so `#include "stm32f1xx.h"` (RCC, GPIOA…) works and `SystemInit()`
+runs before `main()`. They come from ST's GitHub releases (Apache-2.0: `cmsis-core`,
+`cmsis-device-<family>`), downloaded once per family at a pinned tag, checked against a pinned SHA-256
+(`src/modes/stm32/cmsis.ts`) and cached in `~/.local/share/roboagent/cmsis`. Offline, the project is
+created without them (it still builds) and **RoboAgent: STM32: Add CMSIS Headers**
+(`roboagent.stm32.addCmsis`) adds them later — also to existing projects: a project RoboAgent
+generated earlier gets its build file updated; one with its own build file gets the headers where
+that file looks for them (`Drivers/CMSIS/Include` or `Drivers/CMSIS/Core/Include`) and keeps its
+startup file; a project that already has `Drivers/CMSIS` (STM32CubeMX) is left alone; a part outside
+the catalog whose (guessed) define ST's pack does not know gets nothing, with a warning — its family
+header would stop the build with `#error`. STM32WB uses ST's `startup_<device>_cm4.s`, and its
+generated linker script provides the `.MB_MEM2` section that startup initialises. The generated
+build files use `Drivers/CMSIS` only when it exists, and no longer define `USE_HAL_DRIVER` (the HAL
+is not part of the project).
+
 **Build** — acts on the STM32 project holding the active file (else the only one in the
 workspace, else a pick), so an STM32CubeIDE workspace with projects in subfolders works. Runs in
 the *RoboAgent: STM32 build* terminal, errors in Problems via `$roboagent-gcc` (compiler) and

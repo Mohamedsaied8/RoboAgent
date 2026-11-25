@@ -21,9 +21,10 @@ import { ModeHost } from '../modeHost';
 import { ModeProvider } from '../modeProvider';
 import { materialize, ScaffoldError, toIdentifier } from '../scaffold';
 import { BACK, inputStep, pickFolder, pickOrTypeStep, pickStep, StepResult, validateProjectName } from '../wizardSteps';
+import { CmsisIo, installCmsisIntoProject, nodeCmsisIo } from './cmsis';
 import { ensureStm32Toolchain } from './ensureToolchain';
 import { describeOpenOcdFailure, generateStm32Project, openocdArgs, shellQuote, stm32BuildCommands, Stm32ProjectKind, Stm32ProjectSpec, stm32LaunchConfigurations, Stm32Toolchain } from './generator';
-import { isPlausiblePartNumber, resolveTarget, STM32_FAMILIES, STM32_PARTS } from './mcuDatabase';
+import { isPlausiblePartNumber, ResolvedStm32Target, resolveTarget, STM32_FAMILIES, STM32_PARTS } from './mcuDatabase';
 import { findFirmwareImages, planStm32Build, readStm32Part } from './project';
 
 interface Stm32WizardResult {
@@ -44,7 +45,7 @@ export class Stm32ModeProvider implements ModeProvider {
 
 	readonly mode = 'stm32' as const;
 
-	constructor(private readonly host: ModeHost) { }
+	constructor(private readonly host: ModeHost, private readonly cmsisIo: CmsisIo = nodeCmsisIo()) { }
 
 	detect(folderFsPath: string): Promise<boolean> {
 		return detectStm32(folderFsPath);
@@ -75,6 +76,9 @@ export class Stm32ModeProvider implements ModeProvider {
 			return;
 		}
 		this.host.log(`STM32: created ${dest} (${result.project.target.part}, ${result.project.kind}, ${result.project.toolchain})`);
+		if (result.project.kind === 'executable') {
+			await this.addCmsisTo(dest, result.project.target);
+		}
 
 		if (!ready) {
 			this.host.log('STM32: arm-none-eabi-gcc not installed — the project will not build until it is (Build offers the installer).');
@@ -194,6 +198,64 @@ export class Stm32ModeProvider implements ModeProvider {
 			}
 		}
 		return folder || folders[0];
+	}
+
+	// --- CMSIS headers ----------------------------------------------------------
+
+	/** `roboagent.stm32.addCmsis`: put the CMSIS headers into the current STM32 project. */
+	async addCmsis(): Promise<void> {
+		const root = await this.projectRoot();
+		if (!root) { return; }
+		const json = await this.readProjectJson(root);
+		if (json.kind === 'library') {
+			await this.host.showInfo(vscode.l10n.t('This is a library project: it uses the CMSIS headers of the executable project that links it.'));
+			return;
+		}
+		const part = json.part ?? await readStm32Part(root);
+		if (!part) {
+			await this.host.showWarning(vscode.l10n.t('Could not tell which STM32 this project is for (no .roboagent/project.json, .ioc, .cproject or STM32*.ld).'));
+			return;
+		}
+		await this.addCmsisTo(root, resolveTarget(part), true);
+	}
+
+	/**
+	 * Download (once per family) and copy the CMSIS core + device headers into `root`. Failing to
+	 * download is not fatal: the project builds without them, and the message says how to add them later.
+	 */
+	private async addCmsisTo(root: string, target: ResolvedStm32Target, reportSuccess = false): Promise<void> {
+		try {
+			const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: vscode.l10n.t('Adding the CMSIS headers for {0}…', target.part) },
+				() => installCmsisIntoProject(root, target, this.cmsisIo));
+			switch (result.kind) {
+				case 'installed':
+					this.host.log(`STM32: CMSIS headers added to ${root} (${result.files} files${result.updatedBuildFile ? `, ${result.updatedBuildFile} updated` : ''})`);
+					if (result.buildFileNotUpdated) {
+						await this.host.showWarning(vscode.l10n.t('CMSIS headers for {0} added to Drivers/CMSIS, but {1} was edited and could not be updated: add Drivers/CMSIS/Include and Drivers/CMSIS/Device/ST/{2}/Include to its include folders.', target.part, result.buildFileNotUpdated, `STM32${target.family.id}xx`));
+					} else if (reportSuccess) {
+						await this.host.showInfo(result.updatedBuildFile
+							? vscode.l10n.t('CMSIS headers for {0} added to Drivers/CMSIS, and {1} updated to use them.', target.part, result.updatedBuildFile)
+							: vscode.l10n.t('CMSIS headers for {0} added to Drivers/CMSIS.', target.part));
+					}
+					break;
+				case 'unknown-device':
+					await this.host.showWarning(vscode.l10n.t('{0} is not in RoboAgent\'s MCU catalog, and ST\'s CMSIS pack has no device header for the guessed define {1}; no CMSIS headers were added. Add them from STM32Cube for your exact part.', target.part, result.define));
+					break;
+				case 'already-present':
+					if (reportSuccess) {
+						await this.host.showInfo(vscode.l10n.t('This project already has its own Drivers/CMSIS; nothing was changed.'));
+					}
+					break;
+				case 'unknown-family':
+					await this.host.showWarning(vscode.l10n.t('No CMSIS device pack is known for the STM32{0} family; add the headers from STM32Cube.', result.family));
+					break;
+			}
+		} catch (e) {
+			this.host.log(`STM32: CMSIS headers not added: ${e instanceof Error ? e.message : String(e)}`);
+			await this.host.showWarning(
+				vscode.l10n.t('The CMSIS headers (stm32*.h, RCC, GPIO…) could not be downloaded: {0}. The project builds without them; add them later with "RoboAgent: STM32: Add CMSIS Headers".', e instanceof Error ? e.message : String(e)),
+				{ title: vscode.l10n.t('Retry'), run: () => this.addCmsisTo(root, target, true) });
+		}
 	}
 
 	private async readProjectJson(root: string): Promise<Stm32ProjectJson> {
