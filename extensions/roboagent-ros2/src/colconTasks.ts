@@ -13,6 +13,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
+import { EXPORT_COMPILE_COMMANDS } from './compileCommands';
 import { findColconRoot, ros2SourcePrefix } from './util';
 
 export type ColconMode = 'build' | 'test' | 'clean';
@@ -37,6 +38,11 @@ function buildColconArgs(mode: 'build' | 'test', packages?: string[]): string[] 
 	}
 	if (packages && packages.length > 0) {
 		args.push('--packages-select', ...packages);
+	}
+	if (mode === 'build') {
+		// clangd (C++ IntelliSense) reads the compilation databases; see compileCommands.ts.
+		// `--cmake-args` takes every argument after it, so it goes last.
+		args.push('--cmake-args', EXPORT_COMPILE_COMMANDS);
 	}
 	return args;
 }

@@ -80,8 +80,9 @@ Therefore STM32 mode is built on the **open-source stack**, all of it available 
   `clangd.arguments` / `clangd.path`; clangd does not run in untrusted workspaces.
 - Known gaps: the ESP-IDF extension rewrites `.vscode/settings.json` clangd settings (its
   esp-clang, `--query-driver=**`) when it configures an ESP32 project; CMake Tools' palette command
-  *CMake: Debug* still builds a `cppdbg` configuration and does not work (use RoboAgent's Debug);
-  ROS2 C++ IntelliSense needs colcon to export compile_commands.json (task board A14).
+  *CMake: Debug* still builds a `cppdbg` configuration and does not work (use RoboAgent's Debug).
+- ROS2: RoboAgent's colcon builds export each package's compile_commands.json and merge them into
+  `build/compile_commands.json` after the build (`src/compileCommands.ts`), where clangd finds them.
 - Users who want ST's official extension (CubeMX integration, ST-Link server) can install it
   themselves under ST's terms; the *ensure* command links to the instructions. RoboAgent detects
   it and logs its presence, and the generated STM32 projects remain plain CMake projects that

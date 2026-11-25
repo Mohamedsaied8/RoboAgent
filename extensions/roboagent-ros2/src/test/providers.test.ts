@@ -610,7 +610,7 @@ suite('ROS2 provider', () => {
 		await new Ros2ModeProvider(host).build();
 		assert.strictEqual(host.tasks.length, 1);
 		assert.strictEqual(host.tasks[0].cwd, root);
-		assert.ok(host.tasks[0].command.endsWith('colcon build --symlink-install'), host.tasks[0].command);
+		assert.ok(host.tasks[0].command.endsWith('colcon build --symlink-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON'), host.tasks[0].command);
 		assert.deepStrictEqual(host.tasks[0].problemMatchers, ['$colcon']);
 	});
 
@@ -618,7 +618,7 @@ suite('ROS2 provider', () => {
 		vscodeStub.window.activeTextEditor = { document: { uri: vscodeStub.Uri.file(path.join(root, 'src', 'my_pkg', 'src', 'node.cpp')) } };
 		host.settings.set('roboagent.ros2.distro', 'humble');
 		await new Ros2ModeProvider(host).build();
-		assert.ok(host.tasks[0].command.endsWith('colcon build --symlink-install --packages-select my_pkg'), host.tasks[0].command);
+		assert.ok(host.tasks[0].command.endsWith('colcon build --symlink-install --packages-select my_pkg --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON'), host.tasks[0].command);
 		assert.strictEqual(host.tasks[0].name, 'RoboAgent: colcon build my_pkg');
 		// The distro setting only applies when /opt/ros/<distro> exists or ROS_DISTRO is set.
 		const expected = process.env['ROS_DISTRO'] ?? (fs.existsSync('/opt/ros/humble/setup.bash') ? 'humble' : undefined);

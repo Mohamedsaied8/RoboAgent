@@ -133,7 +133,11 @@ export function colconSourceDir(commandLog: string): string | undefined {
 /** colcon logs are workspace files: read only regular files (no FIFOs, devices or symlinks), capped. */
 const MAX_LOG_BYTES = 4 * 1024 * 1024;
 
-async function readText(file: string): Promise<string | undefined> {
+/**
+ * Read a workspace file that a build wrote: regular files only (no FIFOs, devices or symlinks),
+ * at most `maxBytes`. Undefined when it is missing or not a regular file.
+ */
+export async function readText(file: string, maxBytes = MAX_LOG_BYTES): Promise<string | undefined> {
 	try {
 		const stat = await fs.promises.lstat(file);
 		if (!stat.isFile()) {
@@ -146,7 +150,7 @@ async function readText(file: string): Promise<string | undefined> {
 			if (!(await handle.stat()).isFile()) {
 				return undefined;
 			}
-			const buffer = Buffer.alloc(Math.min(stat.size, MAX_LOG_BYTES));
+			const buffer = Buffer.alloc(Math.min(stat.size, maxBytes));
 			const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
 			return buffer.subarray(0, bytesRead).toString('utf8');
 		} finally {

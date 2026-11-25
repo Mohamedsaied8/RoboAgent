@@ -7,11 +7,13 @@
  *  RoboAgent — after every colcon build (the toolbar Build and the `colcon` tasks), put the
  *  CMake errors and warnings of each package in Problems. Compiler errors carry absolute paths
  *  and are already placed by the `$colcon` problem matcher; CMake's are relative to the package
- *  and are read from colcon's logs instead (see cmakeDiagnostics.ts).
+ *  and are read from colcon's logs instead (see cmakeDiagnostics.ts). The packages'
+ *  compile_commands.json files are merged for clangd at the same time (see compileCommands.ts).
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
 import { CMakeProblem, readColconCMakeProblems } from './cmakeDiagnostics';
+import { mergeColconCompileCommands } from './compileCommands';
 import { log } from './modes/output';
 
 /** Whether `task` is a colcon build: a `colcon` task in build mode or the toolbar's colcon build. */
@@ -62,6 +64,14 @@ export function registerColconProblems(): vscode.Disposable {
 		const root = taskCwd(task);
 		if (!root) { return; }
 		const started = generation;
+		try {
+			const merged = await mergeColconCompileCommands(root, log);
+			if (merged) {
+				log(`colcon build: ${merged} compile command(s) merged into build/compile_commands.json for clangd`);
+			}
+		} catch (err) {
+			log(`colcon build: could not merge compile_commands.json: ${err instanceof Error ? err.message : String(err)}`);
+		}
 		const problems = await readColconCMakeProblems(root);
 		if (started !== generation) { return; }
 		collection.clear();
