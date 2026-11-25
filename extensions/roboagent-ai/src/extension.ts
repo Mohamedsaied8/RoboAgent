@@ -10,12 +10,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
-import { buildRequestBody, ChatTurn, DEFAULT_ENDPOINT, formatAttachment, GatewayError, streamChat } from './gateway';
+import { buildRequestBody, ChatTurn, DEFAULT_ENDPOINT, formatAttachment, GatewayError, streamChat, workspaceContextNote } from './gateway';
 
 const AUTH_PROVIDER_ID = 'roboagent';
 const PARTICIPANT_ID = 'roboagent.default';
 const SIGN_IN_COMMAND = 'roboagent.signIn';
 const MAX_ATTACHMENT_BYTES = 300 * 1024;
+const MAX_PROJECT_FILE_BYTES = 16 * 1024;
 
 let output: vscode.LogOutputChannel | undefined;
 
@@ -63,6 +64,26 @@ async function referenceText(reference: vscode.ChatPromptReference): Promise<str
 	return undefined;
 }
 
+/** Mode and target of the open workspace for the model (see workspaceContextNote). */
+async function workspaceContext(): Promise<string | undefined> {
+	const folders = vscode.workspace.workspaceFolders ?? [];
+	let project: unknown;
+	if (folders.length) {
+		try {
+			const bytes = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(folders[0].uri, '.roboagent', 'project.json'));
+			if (bytes.byteLength <= MAX_PROJECT_FILE_BYTES) {
+				project = JSON.parse(new TextDecoder().decode(bytes));
+			}
+		} catch {
+			// Not a RoboAgent-created project.
+		}
+	}
+	// Only a mode set for this workspace: the setting's default ("ros2") says nothing about the
+	// project, and the mode picked in the UI lives in roboagent-ros2's own state.
+	const mode = vscode.workspace.getConfiguration('roboagent').inspect<string>('mode');
+	return workspaceContextNote({ mode: mode?.workspaceFolderValue ?? mode?.workspaceValue, project });
+}
+
 function responseText(turn: vscode.ChatResponseTurn): string {
 	return turn.response
 		.map(part => part instanceof vscode.ChatResponseMarkdownPart ? part.value.value : '')
@@ -85,6 +106,7 @@ async function toTurns(request: vscode.ChatRequest, context: vscode.ChatContext)
 	for (const reference of request.references) {
 		prompt += await referenceText(reference) ?? '';
 	}
+	prompt += await workspaceContext() ?? '';
 	turns.push({ role: 'user', text: prompt });
 	return turns;
 }

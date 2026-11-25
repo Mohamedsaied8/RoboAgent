@@ -107,7 +107,7 @@ export class Stm32ModeProvider implements ModeProvider {
 					break;
 				}
 				case 'location': {
-					const picked = await pickFolder(vscode.l10n.t('New STM32 Project — Location (parent folder)'), vscode.l10n.t('Create here'), location ? vscode.Uri.file(location) : undefined);
+					const picked = await pickFolder(vscode.l10n.t('New STM32 Project — Location (parent folder) ({0}/{1})', 2, TOTAL_STEPS), vscode.l10n.t('Create here'), location ? vscode.Uri.file(location) : undefined);
 					if (!picked) { step = 'name'; break; }   // dialog cancel → back to the name step
 					location = picked;
 					step = 'mcu';
@@ -119,7 +119,7 @@ export class Stm32ModeProvider implements ModeProvider {
 						return { label: `$(circuit-board) ${p.name}`, description: `${family?.core ?? ''} · ${p.flashKb} KB flash / ${p.ramKb} KB RAM`, detail: `${family?.label ?? p.family}${p.description ? ' — ' + p.description : ''}`, value: p.name };
 					});
 					const r: StepResult<string> = await pickOrTypeStep(
-						{ title: vscode.l10n.t('New STM32 Project — Target MCU'), step: 2, totalSteps: TOTAL_STEPS, placeholder: vscode.l10n.t('Search by part number (e.g. STM32F407VGT6) or type any STM32 part'), canGoBack: true },
+						{ title: vscode.l10n.t('New STM32 Project — Target MCU'), step: 3, totalSteps: TOTAL_STEPS, placeholder: vscode.l10n.t('Search by part number (e.g. STM32F407VGT6) or type any STM32 part'), canGoBack: true },
 						items,
 						v => isPlausiblePartNumber(v) ? undefined : vscode.l10n.t('Enter an STM32 part number such as STM32F103C8T6'),
 						part);
@@ -130,7 +130,7 @@ export class Stm32ModeProvider implements ModeProvider {
 					break;
 				}
 				case 'kind': {
-					const r: StepResult<Stm32ProjectKind> = await pickStep<Stm32ProjectKind>({ title: vscode.l10n.t('New STM32 Project — Project Type'), step: 3, totalSteps: TOTAL_STEPS, canGoBack: true }, [
+					const r: StepResult<Stm32ProjectKind> = await pickStep<Stm32ProjectKind>({ title: vscode.l10n.t('New STM32 Project — Project Type'), step: 4, totalSteps: TOTAL_STEPS, canGoBack: true }, [
 						{ label: '$(run) Executable', description: vscode.l10n.t('Firmware image: main.c, startup file, linker script, flash + debug configs'), value: 'executable' },
 						{ label: '$(library) Library', description: vscode.l10n.t('Static library (add_library STATIC) for other STM32 projects'), value: 'library' },
 					], kind);
@@ -141,7 +141,7 @@ export class Stm32ModeProvider implements ModeProvider {
 					break;
 				}
 				case 'toolchain': {
-					const r: StepResult<Stm32Toolchain> = await pickStep<Stm32Toolchain>({ title: vscode.l10n.t('New STM32 Project — Build System'), step: 4, totalSteps: TOTAL_STEPS, canGoBack: true }, [
+					const r: StepResult<Stm32Toolchain> = await pickStep<Stm32Toolchain>({ title: vscode.l10n.t('New STM32 Project — Build System'), step: 5, totalSteps: TOTAL_STEPS, canGoBack: true }, [
 						{ label: '$(tools) CMake + arm-none-eabi-gcc', description: vscode.l10n.t('Recommended: toolchain file, compile_commands.json, cmake --build'), value: 'cmake' },
 						{ label: '$(terminal) Makefile', description: vscode.l10n.t('Plain GNU Make with the same flags'), value: 'make' },
 					], toolchain);

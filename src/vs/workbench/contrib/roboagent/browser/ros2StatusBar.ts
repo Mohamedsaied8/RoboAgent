@@ -7,11 +7,15 @@ import { localize } from '../../../../nls.js';
 import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { env } from '../../../../base/common/process.js';
 import { joinPath } from '../../../../base/common/resources.js';
+import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { IStatusbarEntry, IStatusbarEntryAccessor, IStatusbarService, StatusbarAlignment } from '../../../services/statusbar/browser/statusbar.js';
 import { IRos2WorkspaceService } from '../common/ros2WorkspaceService.js';
+
+/** The context key the RoboAgent extension sets to the active mode (`ros2`, `stm32`, `esp32`). */
+const MODE_CONTEXT_KEY = 'roboagent.mode';
 
 interface RoboAgentProjectConfig {
 	controlLevel?: 'high' | 'low';
@@ -25,7 +29,8 @@ interface RoboAgentProjectConfig {
  * a live indexing/indexed segment driven by {@link IRos2WorkspaceService}. When the open folder
  * carries a `.roboagent/project.json` (REQ-4), the indicator reflects the recorded project type
  * (e.g. `$(circuit-board) STM32` for a low-level target). A future `Connected` segment for the
- * rclpy live bridge is stubbed in the tooltip.
+ * rclpy live bridge is stubbed in the tooltip. Shown in the ROS2 mode only: STM32 and ESP32
+ * projects have no ROS2 workspace to index.
  */
 export class Ros2StatusBar extends Disposable implements IWorkbenchContribution {
 
@@ -40,11 +45,18 @@ export class Ros2StatusBar extends Disposable implements IWorkbenchContribution 
 		@IRos2WorkspaceService private readonly ros2WorkspaceService: IRos2WorkspaceService,
 		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService,
 		@IFileService private readonly fileService: IFileService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 	) {
 		super();
 
-		this.accessor.value = this.statusbarService.addEntry(this.entry(), Ros2StatusBar.ENTRY_ID, StatusbarAlignment.LEFT, 100);
+		this.render();
 
+		const modeKeys = new Set([MODE_CONTEXT_KEY]);
+		this._register(this.contextKeyService.onDidChangeContext(e => {
+			if (e.affectsSome(modeKeys)) {
+				this.render();
+			}
+		}));
 		this._register(this.ros2WorkspaceService.onDidChangeGraph(() => this.render()));
 		this._register(this.ros2WorkspaceService.onDidChangeIndexing(() => this.render()));
 		this._register(this.contextService.onDidChangeWorkspaceFolders(() => this.refreshProject()));
@@ -52,7 +64,15 @@ export class Ros2StatusBar extends Disposable implements IWorkbenchContribution 
 	}
 
 	private render(): void {
-		this.accessor.value?.update(this.entry());
+		// Shown once the RoboAgent extension has settled on the ROS2 mode, so STM32 / ESP32
+		// workspaces never flash it while the extension is still activating.
+		if (this.contextKeyService.getContextKeyValue<string>(MODE_CONTEXT_KEY) !== 'ros2') {
+			this.accessor.clear();
+		} else if (this.accessor.value) {
+			this.accessor.value.update(this.entry());
+		} else {
+			this.accessor.value = this.statusbarService.addEntry(this.entry(), Ros2StatusBar.ENTRY_ID, StatusbarAlignment.LEFT, 100);
+		}
 	}
 
 	private async refreshProject(): Promise<void> {

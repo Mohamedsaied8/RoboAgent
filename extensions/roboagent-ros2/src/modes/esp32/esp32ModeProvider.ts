@@ -125,14 +125,14 @@ export class Esp32ModeProvider implements ModeProvider {
 					break;
 				}
 				case 'location': {
-					const picked = await pickFolder(vscode.l10n.t('New ESP32 Project — Location (parent folder)'), vscode.l10n.t('Create here'), location ? vscode.Uri.file(location) : undefined);
+					const picked = await pickFolder(vscode.l10n.t('New ESP32 Project — Location (parent folder) ({0}/{1})', 2, TOTAL_STEPS), vscode.l10n.t('Create here'), location ? vscode.Uri.file(location) : undefined);
 					if (!picked) { step = 'name'; break; }
 					location = picked;
 					step = 'chip';
 					break;
 				}
 				case 'chip': {
-					const r: StepResult<Esp32Chip> = await pickStep<Esp32Chip>({ title: vscode.l10n.t('New ESP32 Project — Target Chip'), step: 2, totalSteps: TOTAL_STEPS, canGoBack: true },
+					const r: StepResult<Esp32Chip> = await pickStep<Esp32Chip>({ title: vscode.l10n.t('New ESP32 Project — Target Chip'), step: 3, totalSteps: TOTAL_STEPS, canGoBack: true },
 						ESP32_CHIPS.map(c => ({ label: `$(radio-tower) ${c.label}`, description: c.description, detail: `idf.py set-target ${c.id} · ${c.arch}`, value: c.id })), chip);
 					if (r === undefined) { return undefined; }
 					if (r === BACK) { step = 'location'; break; }
@@ -148,7 +148,7 @@ export class Esp32ModeProvider implements ModeProvider {
 					if (this.extensionInstalled) {
 						items.push({ label: '$(extensions) ESP-IDF extension: New Project…', description: vscode.l10n.t('Use the ESP-IDF extension wizard (IDF examples, components)'), value: 'extension' });
 					}
-					const r: StepResult<TemplateChoice> = await pickStep<TemplateChoice>({ title: vscode.l10n.t('New ESP32 Project — Template'), step: 3, totalSteps: TOTAL_STEPS, canGoBack: true }, items, template);
+					const r: StepResult<TemplateChoice> = await pickStep<TemplateChoice>({ title: vscode.l10n.t('New ESP32 Project — Template'), step: 4, totalSteps: TOTAL_STEPS, canGoBack: true }, items, template);
 					if (r === undefined) { return undefined; }
 					if (r === BACK) { step = 'chip'; break; }
 					template = r;

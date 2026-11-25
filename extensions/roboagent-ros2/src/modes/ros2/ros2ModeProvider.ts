@@ -180,11 +180,11 @@ export class Ros2ModeProvider implements ModeProvider {
 						const wsName = await inputStep({ title: vscode.l10n.t('New colcon workspace — Name'), prompt: vscode.l10n.t('Workspace folder name (e.g. robot_ws)'), value: 'robot_ws', canGoBack: true, validate: v => /^[A-Za-z][\w-]*$/.test(v.trim()) ? undefined : vscode.l10n.t('Use a letter followed by letters, digits, _ or -') });
 						if (wsName === undefined) { return undefined; }
 						if (wsName === BACK) { break; }
-						const parent = await pickFolder(vscode.l10n.t('New colcon workspace — Location (parent folder)'), vscode.l10n.t('Create here'));
+						const parent = await pickFolder(vscode.l10n.t('New colcon workspace — Location (parent folder) ({0}/{1})', 1, TOTAL_STEPS), vscode.l10n.t('Create here'));
 						if (!parent) { break; }
 						workspaceRoot = path.join(parent, wsName.trim()); createWorkspace = true; step = 'name'; break;
 					}
-					const picked = await pickFolder(vscode.l10n.t('Existing colcon workspace'), vscode.l10n.t('Use this workspace'));
+					const picked = await pickFolder(vscode.l10n.t('Existing colcon workspace ({0}/{1})', 1, TOTAL_STEPS), vscode.l10n.t('Use this workspace'));
 					if (!picked) { break; }
 					workspaceRoot = picked; createWorkspace = !(await this.host.fileExists(path.join(picked, 'src'))); step = 'name';
 					break;

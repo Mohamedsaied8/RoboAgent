@@ -67,6 +67,44 @@ export function formatAttachment(path: string, content: string): string {
 	return `\n\n\`\`\` path=${path.replace(/\s+/g, '_')}\n${content}\n\`\`\``;
 }
 
+/** What the chat tells the model about the open workspace (see {@link workspaceContextNote}). */
+export interface WorkspaceInfo {
+	/** The RoboAgent mode (`roboagent.mode`): `ros2`, `stm32` or `esp32`. */
+	readonly mode?: string;
+	/** The parsed `.roboagent/project.json` of the first folder, if any. */
+	readonly project?: unknown;
+}
+
+const PROJECT_FIELDS: readonly [key: string, label: string][] = [['target', 'Target'], ['part', 'MCU'], ['chip', 'Chip'], ['kind', 'Project type'], ['toolchain', 'Build system']];
+
+/** Repository content goes into the prompt: only short, plain values. */
+function plainValue(value: unknown): string | undefined {
+	return typeof value === 'string' && /^[\w.+-]{1,40}$/.test(value) ? value : undefined;
+}
+
+/**
+ * A short note on the open workspace appended to the user's prompt, so answers fit the project
+ * (ROS 2 vs. an STM32 / ESP32 part) without the user restating it. Only the mode and the
+ * project's target — no folder names or paths; file contents only when the user attaches them.
+ */
+export function workspaceContextNote(info: WorkspaceInfo): string | undefined {
+	const lines: string[] = [];
+	const mode = plainValue(info.mode);
+	if (mode) {
+		lines.push(`RoboAgent mode: ${mode}`);
+	}
+	if (typeof info.project === 'object' && info.project !== null) {
+		const project = info.project as Record<string, unknown>;
+		for (const [key, label] of PROJECT_FIELDS) {
+			const value = plainValue(project[key]);
+			if (value) {
+				lines.push(`${label}: ${value}`);
+			}
+		}
+	}
+	return lines.length ? `\n\n[Workspace context]\n${lines.join('\n')}` : undefined;
+}
+
 /**
  * Parses an SSE UI-message stream. Chunks may split events anywhere; unknown event types are
  * ignored; an `error` event throws.
