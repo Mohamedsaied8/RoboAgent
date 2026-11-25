@@ -11,6 +11,7 @@ import { NullLogService } from '../../../log/common/log.js';
 import { KnownStorageProvider, IEncryptionMainService } from '../../../encryption/common/encryptionService.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { URI } from '../../../../base/common/uri.js';
+import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 
 class MockEncryptionService implements IEncryptionMainService {
 	_serviceBrand: undefined;
@@ -21,18 +22,28 @@ class MockEncryptionService implements IEncryptionMainService {
 	async setUsePlainTextEncryption(): Promise<void> { }
 }
 
+/** Records errors, which AuthStorageService logs instead of throwing. */
+class ErrorLog extends NullLogService {
+	readonly errors: string[] = [];
+	override error(message: string | Error, ...args: unknown[]): void {
+		this.errors.push(`${message} ${args.map(String).join(' ')}`);
+	}
+}
+
 suite('RoboAgent Auth Storage', () => {
+	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 	let storageService: AuthStorageService;
 	let fileService: FileService;
 	let userDataPath: string;
+	let logService: ErrorLog;
 
 	setup(() => {
-		const logService = new NullLogService();
-		fileService = new FileService(logService);
-		const provider = new InMemoryFileSystemProvider();
-		fileService.registerProvider(Schemas.file, provider);
-		
-		userDataPath = 'c:/mock_user_data';
+		logService = new ErrorLog();
+		fileService = disposables.add(new FileService(logService));
+		const provider = disposables.add(new InMemoryFileSystemProvider());
+		disposables.add(fileService.registerProvider(Schemas.file, provider));
+
+		userDataPath = '/mock_user_data';
 		storageService = new AuthStorageService(userDataPath, fileService, new MockEncryptionService(), logService);
 	});
 
@@ -52,13 +63,13 @@ suite('RoboAgent Auth Storage', () => {
 		await storageService.save(dataToSave);
 		const loadedData = await storageService.load();
 
-		assert.deepStrictEqual(loadedData, dataToSave);
+		assert.deepStrictEqual([loadedData, logService.errors], [dataToSave, []]);
 	});
 
 	test('clear removes the file', async () => {
 		const dataToSave: IStoredSessionData = { refreshToken: '123' };
 		await storageService.save(dataToSave);
-		
+
 		const existsAfterSave = await fileService.exists(URI.file(`${userDataPath}/roboagent-auth.json`));
 		assert.strictEqual(existsAfterSave, true);
 

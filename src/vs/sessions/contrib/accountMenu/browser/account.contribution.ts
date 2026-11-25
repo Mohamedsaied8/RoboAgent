@@ -40,10 +40,8 @@ import { IAuthenticationUsageService } from '../../../../workbench/services/auth
 import { IAuthenticationService } from '../../../../workbench/services/authentication/common/authentication.js';
 import { IChatDashboardService } from '../../../browser/chatDashboardService.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
-import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
-import { ProxyChannel } from '../../../../base/parts/ipc/common/ipc.js';
-import { IRoboAgentAuthMainService } from '../../../../platform/roboagentAuth/common/roboagentAuthService.js';
+import { IRoboAgentAuthService } from '../../../../platform/roboagentAuth/common/roboagentAuthService.js';
 
 // --- Account Menu Items --- //
 const AccountMenu = Menus.AccountMenu;
@@ -80,14 +78,14 @@ registerAction2(class extends Action2 {
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
-		const mainProcessService = accessor.get(IMainProcessService);
 		const notificationService = accessor.get(INotificationService);
-		const authService = ProxyChannel.toService<IRoboAgentAuthMainService>(mainProcessService.getChannel('roboagentAuth'));
+		const authService = accessor.get(IRoboAgentAuthService);
 		try {
 			await authService.signIn();
-		} catch (e: any) {
-			if (e.message !== 'Sign in aborted') {
-				notificationService.error(`Sign in failed: ${e.message}`);
+		} catch (e) {
+			const message = e instanceof Error ? e.message : String(e);
+			if (message !== 'Sign in aborted') {
+				notificationService.error(`Sign in failed: ${message}`);
 			}
 		}
 	}

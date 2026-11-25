@@ -25,10 +25,8 @@ import { Ros2GraphEditorInput } from './ros2GraphEditorInput.js';
 import { Ros2PackageExplorerView } from './ros2PackageExplorerView.js';
 import { Ros2StatusBar } from './ros2StatusBar.js';
 import { IndexRos2WorkspaceAction, registerRoboAgentActions } from './ros2WorkspaceActions.js';
-import { RoboAgentAuthStatusBar } from './roboagentAuthStatusBar.js';
-import { RoboAgentAuthenticationProviderContribution } from './roboagentAuthenticationProvider.js';
 import { RoboAgentModeToolbarContribution } from './roboagentModeToolbar.js';
-import { registerAuthActions, SignInAction, SignUpAction } from './roboagentAuthCommands.js';
+import { SignInAction, SignUpAction } from './roboagentAuthCommands.js';
 // --- Service ---------------------------------------------------------------
 
 registerSingleton(IRos2WorkspaceService, Ros2WorkspaceService, InstantiationType.Delayed);
@@ -108,7 +106,6 @@ Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEdit
 // --- Commands / actions ----------------------------------------------------
 
 registerRoboAgentActions();
-registerAuthActions();
 
 // --- Startup bootstrap: index the workspace once restored ------------------
 
@@ -127,13 +124,8 @@ registerWorkbenchContribution2(Ros2IndexBootstrap.ID, Ros2IndexBootstrap, Workbe
 
 registerWorkbenchContribution2(Ros2StatusBar.ID, Ros2StatusBar, WorkbenchPhase.AfterRestored);
 
-// --- Auth status bar -------------------------------------------------------
-
-registerWorkbenchContribution2(RoboAgentAuthStatusBar.ID, RoboAgentAuthStatusBar, WorkbenchPhase.AfterRestored);
-
-// --- `roboagent` authentication provider (the account's token for extensions, e.g. AI chat) ---
-
-registerWorkbenchContribution2(RoboAgentAuthenticationProviderContribution.ID, RoboAgentAuthenticationProviderContribution, WorkbenchPhase.BlockRestore);
+// The account (status bar, `roboagent` authentication provider, Sign In / Up / Out) needs the
+// main process: registered in ../electron-browser/roboagentAuth.contribution.ts.
 
 // --- Mode | Create | Build | Debug title-bar toolbar ------------------------
 

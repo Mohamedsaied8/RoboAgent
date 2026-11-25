@@ -193,6 +193,7 @@ import '../workbench/contrib/mcp/electron-browser/mcp.contribution.js';
 
 // Policy Export
 import '../workbench/contrib/policyExport/electron-browser/policyExport.contribution.js';
+import '../workbench/contrib/roboagent/electron-browser/roboagentAuth.contribution.js'; // RoboAgent
 
 //#endregion
 

@@ -50,3 +50,12 @@ export interface IRoboAgentAuthMainService {
 	 */
 	getAccessToken(): Promise<string | undefined>;
 }
+
+/**
+ * The main-process auth service as the workbench sees it (renderer side, over IPC). Registered by
+ * `electron-browser/roboagentAuthService.ts`; `browser/` code injects this instead of opening the
+ * `roboagentAuth` channel through `IMainProcessService` (which belongs to electron-browser).
+ */
+export const IRoboAgentAuthService = createDecorator<IRoboAgentAuthService>('roboagentAuthService');
+
+export type IRoboAgentAuthService = IRoboAgentAuthMainService;

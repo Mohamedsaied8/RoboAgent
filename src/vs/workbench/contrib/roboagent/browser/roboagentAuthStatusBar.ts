@@ -7,9 +7,7 @@ import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle
 import { localize } from '../../../../nls.js';
 import { IStatusbarEntry, IStatusbarEntryAccessor, IStatusbarService, StatusbarAlignment } from '../../../services/statusbar/browser/statusbar.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
-import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
-import { ProxyChannel } from '../../../../base/parts/ipc/common/ipc.js';
-import { IRoboAgentAuthMainService, IRoboAgentAuthSession } from '../../../../platform/roboagentAuth/common/roboagentAuthService.js';
+import { IRoboAgentAuthService, IRoboAgentAuthSession } from '../../../../platform/roboagentAuth/common/roboagentAuthService.js';
 
 import { RawContextKey, IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 
@@ -18,21 +16,19 @@ export const CONTEXT_ROBOAGENT_SIGNED_IN = new RawContextKey<boolean>('roboagent
 export class RoboAgentAuthStatusBar extends Disposable implements IWorkbenchContribution {
 	public static readonly ID = 'roboagent.authStatusBar';
 
-	private readonly authService: IRoboAgentAuthMainService;
 	private readonly statusbarEntry = this._register(new MutableDisposable<IStatusbarEntryAccessor>());
 	private readonly roboagentSignedInContextKey: IContextKey<boolean>;
 
 	constructor(
 		@IStatusbarService private readonly statusbarService: IStatusbarService,
-		@IMainProcessService mainProcessService: IMainProcessService,
+		@IRoboAgentAuthService private readonly authService: IRoboAgentAuthService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 	) {
 		super();
-		this.authService = ProxyChannel.toService<IRoboAgentAuthMainService>(mainProcessService.getChannel('roboagentAuth'));
 		this.roboagentSignedInContextKey = CONTEXT_ROBOAGENT_SIGNED_IN.bindTo(contextKeyService);
 
 		this._register(this.authService.onDidChangeSession(session => this.update(session)));
-		
+
 		this.authService.getSession().then(session => this.update(session));
 	}
 

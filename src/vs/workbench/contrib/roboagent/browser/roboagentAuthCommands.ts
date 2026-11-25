@@ -7,9 +7,7 @@ import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/c
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { localize, localize2 } from '../../../../nls.js';
-import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
-import { ProxyChannel } from '../../../../base/parts/ipc/common/ipc.js';
-import { IRoboAgentAuthMainService } from '../../../../platform/roboagentAuth/common/roboagentAuthService.js';
+import { IRoboAgentAuthService } from '../../../../platform/roboagentAuth/common/roboagentAuthService.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
@@ -27,7 +25,7 @@ export function plainNotificationText(message: string): string {
  * Run the browser sign-in with a progress notification whose Cancel really cancels it; the
  * notification is closed however the sign-in ends. `failureMessage` formats the error.
  */
-async function runBrowserSignIn(authService: IRoboAgentAuthMainService, notificationService: INotificationService, openingMessage: string, failureMessage: (error: string) => string): Promise<void> {
+async function runBrowserSignIn(authService: IRoboAgentAuthService, notificationService: INotificationService, openingMessage: string, failureMessage: (error: string) => string): Promise<void> {
 	const progress = notificationService.prompt(Severity.Info, openingMessage, [{
 		label: localize('roboagent.signIn.cancel', "Cancel"),
 		run: () => { void authService.cancelSignIn(); }
@@ -59,10 +57,9 @@ export class SignInAction extends Action2 {
 	}
 
 	async run(accessor: ServicesAccessor): Promise<void> {
-		const mainProcessService = accessor.get(IMainProcessService);
 		const notificationService = accessor.get(INotificationService);
 
-		const authService = ProxyChannel.toService<IRoboAgentAuthMainService>(mainProcessService.getChannel('roboagentAuth'));
+		const authService = accessor.get(IRoboAgentAuthService);
 
 		const session = await authService.getSession();
 		if (session.isSignedIn) {
@@ -89,10 +86,9 @@ export class SignUpAction extends Action2 {
 	}
 
 	async run(accessor: ServicesAccessor): Promise<void> {
-		const mainProcessService = accessor.get(IMainProcessService);
 		const notificationService = accessor.get(INotificationService);
 
-		const authService = ProxyChannel.toService<IRoboAgentAuthMainService>(mainProcessService.getChannel('roboagentAuth'));
+		const authService = accessor.get(IRoboAgentAuthService);
 
 		const session = await authService.getSession();
 		if (session.isSignedIn) {
@@ -120,10 +116,9 @@ export class SignOutAction extends Action2 {
 	}
 
 	async run(accessor: ServicesAccessor): Promise<void> {
-		const mainProcessService = accessor.get(IMainProcessService);
 		const notificationService = accessor.get(INotificationService);
 
-		const authService = ProxyChannel.toService<IRoboAgentAuthMainService>(mainProcessService.getChannel('roboagentAuth'));
+		const authService = accessor.get(IRoboAgentAuthService);
 
 		const session = await authService.getSession();
 		if (!session.isSignedIn) {

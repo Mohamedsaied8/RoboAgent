@@ -15,10 +15,8 @@
 
 import { Emitter } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { ProxyChannel } from '../../../../base/parts/ipc/common/ipc.js';
 import { localize } from '../../../../nls.js';
-import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
-import { IRoboAgentAuthMainService, IRoboAgentAuthSession } from '../../../../platform/roboagentAuth/common/roboagentAuthService.js';
+import { IRoboAgentAuthService, IRoboAgentAuthSession } from '../../../../platform/roboagentAuth/common/roboagentAuthService.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { AuthenticationSession, AuthenticationSessionsChangeEvent, IAuthenticationProvider, IAuthenticationService } from '../../../services/authentication/common/authentication.js';
 
@@ -35,7 +33,7 @@ class RoboAgentAuthenticationProvider extends Disposable implements IAuthenticat
 
 	private lastSession: AuthenticationSession | undefined;
 
-	constructor(private readonly authService: IRoboAgentAuthMainService) {
+	constructor(private readonly authService: IRoboAgentAuthService) {
 		super();
 		this._register(authService.onDidChangeSession(session => this.onDidChangeAccount(session)));
 	}
@@ -95,10 +93,9 @@ export class RoboAgentAuthenticationProviderContribution extends Disposable impl
 
 	constructor(
 		@IAuthenticationService authenticationService: IAuthenticationService,
-		@IMainProcessService mainProcessService: IMainProcessService,
+		@IRoboAgentAuthService authService: IRoboAgentAuthService,
 	) {
 		super();
-		const authService = ProxyChannel.toService<IRoboAgentAuthMainService>(mainProcessService.getChannel('roboagentAuth'));
 		const provider = this._register(new RoboAgentAuthenticationProvider(authService));
 		authenticationService.registerDeclaredAuthenticationProvider({ id: provider.id, label: provider.label });
 		authenticationService.registerAuthenticationProvider(provider.id, provider);

@@ -43,6 +43,7 @@ import { BrowserViewMainService, IBrowserViewMainService } from '../../platform/
 import { BrowserViewGroupMainService, IBrowserViewGroupMainService } from '../../platform/browserView/electron-main/browserViewGroupMainService.js';
 import { IRoboAgentAuthMainService } from '../../platform/roboagentAuth/common/roboagentAuthService.js';
 import { RoboAgentAuthMainService } from '../../platform/roboagentAuth/electron-main/roboagentAuthMainService.js';
+import { roboAgentAuthIpcSurface } from '../../platform/roboagentAuth/electron-main/authSession.js';
 import { ensureLinuxUrlSchemeHandler, nodeUrlSchemeHost, urlSchemeTarget } from '../../platform/roboagentAuth/electron-main/urlSchemeRegistration.js';
 import { NativeParsedArgs } from '../../platform/environment/common/argv.js';
 import { IEnvironmentMainService } from '../../platform/environment/electron-main/environmentMainService.js';
@@ -1269,7 +1270,7 @@ export class CodeApplication extends Disposable {
 		mainProcessElectronServer.registerChannel('encryption', encryptionChannel);
 
 		// RoboAgent Auth
-		const roboagentAuthChannel = ProxyChannel.fromService(accessor.get(IRoboAgentAuthMainService), disposables);
+		const roboagentAuthChannel = ProxyChannel.fromService(roboAgentAuthIpcSurface(accessor.get(IRoboAgentAuthMainService)), disposables);
 		mainProcessElectronServer.registerChannel('roboagentAuth', roboagentAuthChannel);
 
 		// Browser View

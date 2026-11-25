@@ -199,6 +199,7 @@ import './contrib/policyExport/electron-browser/policyExport.contribution.js';
 
 // Keybindings Export
 import './contrib/keybindingsExport/electron-browser/keybindingsExport.contribution.js';
+import './contrib/roboagent/electron-browser/roboagentAuth.contribution.js'; // RoboAgent
 
 //#endregion
 

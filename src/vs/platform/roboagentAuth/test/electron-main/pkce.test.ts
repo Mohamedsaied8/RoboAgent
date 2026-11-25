@@ -4,9 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as assert from 'assert';
+import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { constantTimeEqual, generateCodeChallenge, generateCodeVerifier, generateState } from '../../electron-main/pkce.js';
 
 suite('RoboAgent Auth PKCE', () => {
+	ensureNoDisposablesAreLeakedInTestSuite();
+
 	test('generateCodeVerifier creates a 43-character base64url string', () => {
 		const verifier = generateCodeVerifier();
 		assert.strictEqual(verifier.length, 43);
@@ -18,7 +21,7 @@ suite('RoboAgent Auth PKCE', () => {
 		const challenge = generateCodeChallenge(verifier);
 		// Expected hash of the above string
 		// echo -n "test-verifier-that-is-long-enough-for-pkce" | openssl dgst -sha256 -binary | base64 | tr '/+' '_-' | tr -d '='
-		assert.strictEqual(challenge, 'l02dZc3b7JkI2i95Qp27o40xX4-y7305y2WnBfT6Q1s');
+		assert.strictEqual(challenge, '_CwdUbPcDSmV2Wm80tcKQ73cQMie-QO_piOmb5qtaJg');
 	});
 
 	test('generateState creates a 43-character base64url string', () => {
