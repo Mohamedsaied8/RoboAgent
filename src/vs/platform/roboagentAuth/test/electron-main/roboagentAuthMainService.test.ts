@@ -9,18 +9,19 @@ import { IProductService } from '../../../product/common/productService.js';
 import { IFileService } from '../../../files/common/files.js';
 import { IEncryptionMainService, KnownStorageProvider } from '../../../encryption/common/encryptionService.js';
 import { IEnvironmentMainService } from '../../../environment/electron-main/environmentMainService.js';
-import { IURLService } from '../../../url/common/url.js';
 import { INativeHostMainService } from '../../../native/electron-main/nativeHostMainService.js';
 import { RoboAgentAuthMainService } from '../../electron-main/roboagentAuthMainService.js';
-import { IDisposable } from '../../../../base/common/lifecycle.js';
+import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 
 suite('RoboAgent Auth Main Service', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
 	let authService: RoboAgentAuthMainService;
 
 	setup(() => {
 		const logService = new NullLogService();
 		const productService = { supabaseAnonKey: 'test-key', urlProtocol: 'roboagent' } as unknown as IProductService;
-		
+
 		const fileService = {
 			exists: async () => false,
 			readFile: async () => { throw new Error('Not implemented'); },
@@ -40,10 +41,6 @@ suite('RoboAgent Auth Main Service', () => {
 			userDataPath: 'c:/mock_user_data'
 		} as unknown as IEnvironmentMainService;
 
-		const urlService = {
-			registerHandler: () => ({ dispose: () => {} } as IDisposable)
-		} as unknown as IURLService;
-
 		const nativeHostService = {
 			openExternal: async () => true
 		} as unknown as INativeHostMainService;
@@ -54,7 +51,6 @@ suite('RoboAgent Auth Main Service', () => {
 			fileService,
 			encryptionService,
 			environmentService,
-			urlService,
 			nativeHostService
 		);
 	});

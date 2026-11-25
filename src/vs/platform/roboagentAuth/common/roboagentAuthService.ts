@@ -29,6 +29,11 @@ export interface IRoboAgentAuthMainService {
 	signIn(): Promise<IRoboAgentAuthSession>;
 
 	/**
+	 * Cancel the sign-in in progress, if any: its `signIn()` rejects with "Sign in aborted".
+	 */
+	cancelSignIn(): Promise<void>;
+
+	/**
 	 * Sign out, clearing both local credentials and remote Supabase session.
 	 */
 	signOut(): Promise<void>;

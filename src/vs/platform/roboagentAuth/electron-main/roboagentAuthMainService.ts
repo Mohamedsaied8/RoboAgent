@@ -4,34 +4,24 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from '../../../base/common/event.js';
-import { Disposable, IDisposable } from '../../../base/common/lifecycle.js';
+import { Disposable } from '../../../base/common/lifecycle.js';
 import { ILogService } from '../../log/common/log.js';
 import { IProductService } from '../../product/common/productService.js';
 import { IRoboAgentAuthMainService, IRoboAgentAuthSession } from '../common/roboagentAuthService.js';
 import { IFileService } from '../../files/common/files.js';
 import { IEncryptionMainService } from '../../encryption/common/encryptionService.js';
 import { IEnvironmentMainService } from '../../environment/electron-main/environmentMainService.js';
-import { IURLService } from '../../url/common/url.js';
+import { IURLHandler } from '../../url/common/url.js';
 import { INativeHostMainService } from '../../native/electron-main/nativeHostMainService.js';
-import { URI } from '../../../base/common/uri.js';
 import { AuthStorageService, IStoredSessionData } from './storage.js';
 import { AuthExchangeService, ExchangeError, ITokenResponse } from './exchange.js';
-import { LoopbackServer, IActiveLoopback, ILoopbackResult } from './loopback.js';
-import { constantTimeEqual, generateCodeChallenge, generateCodeVerifier, generateState } from './pkce.js';
+import { BrowserSignIn, buildLoginUrl } from './authCallback.js';
+import { generateCodeChallenge, generateCodeVerifier, generateState } from './pkce.js';
 import { AUTH_TIMEOUT_MS, TOKEN_REFRESH_MARGIN_MS, WEB_BASE } from '../common/authConstants.js';
 
 /** The auth server refused the refresh token (as opposed to a network failure). */
 function isRejectedRefreshToken(e: unknown): boolean {
 	return e instanceof ExchangeError && (e.statusCode === 400 || e.statusCode === 401);
-}
-
-interface IActiveSignIn {
-	readonly loopbackServer?: IActiveLoopback;
-	readonly deepLinkRegistration?: IDisposable;
-	readonly abort: () => void;
-	readonly promise: Promise<ILoopbackResult>;
-	resolveCallback: (res: ILoopbackResult) => void;
-	rejectCallback: (err: Error) => void;
 }
 
 export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAuthMainService {
@@ -44,7 +34,6 @@ export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAu
 	private _accessToken: string | undefined;
 	private _accessTokenExpiresAt = 0;
 	private _refreshTimer: ReturnType<typeof setTimeout> | undefined;
-	private _activeSignIn: IActiveSignIn | undefined;
 	private _refreshPromise: Promise<void> | undefined;
 
 	private readonly storageService: AuthStorageService;
@@ -56,7 +45,6 @@ export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAu
 		@IFileService fileService: IFileService,
 		@IEncryptionMainService encryptionService: IEncryptionMainService,
 		@IEnvironmentMainService environmentService: IEnvironmentMainService,
-		@IURLService private readonly urlService: IURLService,
 		@INativeHostMainService private readonly nativeHostService: INativeHostMainService
 	) {
 		super();
@@ -69,6 +57,7 @@ export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAu
 
 		this.storageService = new AuthStorageService(environmentService.userDataPath, fileService, encryptionService, logService);
 		this.exchangeService = new AuthExchangeService(anonKey || '', logService);
+		this.browserSignIn = new BrowserSignIn(this.productService.urlProtocol, AUTH_TIMEOUT_MS, message => this.logService.warn(`RoboAgentAuthMainService: ${message}`));
 
 		// Kick off restoration asynchronously
 		this.tryRestoreSession();
@@ -93,14 +82,22 @@ export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAu
 		return this._accessToken;
 	}
 
+	private readonly browserSignIn: BrowserSignIn;
+	/** Bumped by every sign-in and cancel: a sign-in cancelled during its code exchange discards the tokens. */
+	private signInGeneration = 0;
+
+	/**
+	 * Receives `<urlProtocol>://auth/callback` links. app.ts registers it ahead of every other URL
+	 * handler, so the authorization code never reaches a window or the protocol-URL log. A property,
+	 * not a method, so it is not callable over the IPC channel.
+	 */
+	public get signInCallbackHandler(): IURLHandler {
+		return this.browserSignIn.handler;
+	}
+
 	public async signIn(): Promise<IRoboAgentAuthSession> {
 		this.logService.trace('RoboAgentAuthMainService#signIn: Starting sign-in flow');
-
-		if (this._activeSignIn) {
-			this.logService.trace('RoboAgentAuthMainService#signIn: Cancelling existing sign-in attempt');
-			this._activeSignIn.abort();
-			this._activeSignIn = undefined;
-		}
+		const generation = ++this.signInGeneration;
 
 		const isEncryptionAvailable = await this.storageService.isAvailable();
 		if (!isEncryptionAvailable) {
@@ -111,112 +108,27 @@ export class RoboAgentAuthMainService extends Disposable implements IRoboAgentAu
 		const challenge = generateCodeChallenge(verifier);
 		const state = generateState();
 
-		let resultResolve: (res: ILoopbackResult) => void;
-		let resultReject: (err: Error) => void;
-		const resultPromise = new Promise<ILoopbackResult>((res, rej) => {
-			resultResolve = res;
-			resultReject = rej;
-		});
-
-		let redirectUri: string;
-		let loopbackServer: IActiveLoopback | undefined;
-		let deepLinkRegistration: IDisposable | undefined;
-
-		const cleanup = () => {
-			if (this._activeSignIn?.loopbackServer) {
-				this._activeSignIn.loopbackServer.abort();
-			}
-			if (this._activeSignIn?.deepLinkRegistration) {
-				this._activeSignIn.deepLinkRegistration.dispose();
-			}
-			if (timeoutHandle) {
-				clearTimeout(timeoutHandle);
-			}
-			this._activeSignIn = undefined;
-		};
-
-		const abort = () => {
-			cleanup();
-			resultReject(new Error('Sign in aborted'));
-		};
-
-		this._activeSignIn = {
-			abort,
-			promise: resultPromise,
-			resolveCallback: resultResolve!,
-			rejectCallback: resultReject!
-		};
-
-		// 1. Try loopback
-		try {
-			const loopback = new LoopbackServer();
-			loopbackServer = await loopback.listen();
-			this._activeSignIn = { ...this._activeSignIn, loopbackServer };
-			redirectUri = `http://127.0.0.1:${loopbackServer.port}/callback`;
-
-			// Hook up the loopback promise to our overall result promise
-			loopbackServer.promise.then(
-				(res) => resultResolve!(res),
-				(err) => resultReject!(err)
-			);
-		} catch (e) {
-			this.logService.warn('RoboAgentAuthMainService#signIn: Loopback failed, falling back to deep-link', e);
-
-			// 2. Fallback to deep-link
-			redirectUri = `${this.productService.urlProtocol}://auth/callback`;
-
-			deepLinkRegistration = this.urlService.registerHandler({
-				handleURL: async (uri: URI, options?: { originalUrl?: string }) => {
-					if (uri.path === '/callback' && uri.authority === 'auth') {
-						const queryParams = new URLSearchParams(uri.query);
-						const code = queryParams.get('code') || undefined;
-						const returnedState = queryParams.get('state') || undefined;
-						const error = queryParams.get('error') || undefined;
-						const error_description = queryParams.get('error_description') || undefined;
-
-						this._activeSignIn?.resolveCallback({ code, state: returnedState, error, error_description });
-						return true; // handled
-					}
-					return false;
-				}
-			});
-			this._activeSignIn = { ...this._activeSignIn, deepLinkRegistration };
+		// Cancelled (or replaced by a newer sign-in) while the storage check was running.
+		if (generation !== this.signInGeneration) {
+			throw new Error('Sign in aborted');
 		}
 
-		// 3. Open browser
-		const authUrl = `${WEB_BASE}/login?code_challenge=${challenge}&code_challenge_method=S256&state=${state}&redirect_uri=${encodeURIComponent(redirectUri)}`;
-		await this.nativeHostService.openExternal(undefined, authUrl);
+		// The browser returns through RoboAgent's URL scheme (`signInCallbackHandler`); no callback
+		// server is opened on localhost. A new sign-in replaces the one in progress.
+		const code = await this.browserSignIn.run(state, redirectUri =>
+			this.nativeHostService.openExternal(undefined, buildLoginUrl(WEB_BASE, challenge, state, redirectUri)));
 
-		// 4. Wait for callback with timeout
-		const timeoutHandle = setTimeout(() => {
-			this.logService.warn('RoboAgentAuthMainService#signIn: Timed out waiting for browser callback');
-			abort();
-		}, AUTH_TIMEOUT_MS);
-
-		try {
-			const result = await resultPromise;
-			cleanup();
-
-			if (result.error) {
-				throw new Error(`Auth error: ${result.error} - ${result.error_description || ''}`);
-			}
-
-			if (!result.state || !constantTimeEqual(state, result.state)) {
-				throw new Error('State mismatch. Possible CSRF attack.');
-			}
-
-			if (!result.code) {
-				throw new Error('No code returned from auth provider.');
-			}
-
-			// 5. Exchange code
-			const tokenResponse = await this.exchangeService.exchangeCode(result.code, verifier);
-			await this.handleTokenResponse(tokenResponse);
-			return this._session;
-		} catch (e) {
-			cleanup();
-			throw e;
+		const tokenResponse = await this.exchangeService.exchangeCode(code, verifier);
+		if (generation !== this.signInGeneration) {
+			throw new Error('Sign in aborted');
 		}
+		await this.handleTokenResponse(tokenResponse);
+		return this._session;
+	}
+
+	public async cancelSignIn(): Promise<void> {
+		this.signInGeneration++;
+		this.browserSignIn.cancel();
 	}
 
 	public async signOut(): Promise<void> {

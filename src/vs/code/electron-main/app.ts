@@ -43,6 +43,7 @@ import { BrowserViewMainService, IBrowserViewMainService } from '../../platform/
 import { BrowserViewGroupMainService, IBrowserViewGroupMainService } from '../../platform/browserView/electron-main/browserViewGroupMainService.js';
 import { IRoboAgentAuthMainService } from '../../platform/roboagentAuth/common/roboagentAuthService.js';
 import { RoboAgentAuthMainService } from '../../platform/roboagentAuth/electron-main/roboagentAuthMainService.js';
+import { ensureLinuxUrlSchemeHandler, nodeUrlSchemeHost, urlSchemeTarget } from '../../platform/roboagentAuth/electron-main/urlSchemeRegistration.js';
 import { NativeParsedArgs } from '../../platform/environment/common/argv.js';
 import { IEnvironmentMainService } from '../../platform/environment/electron-main/environmentMainService.js';
 import { isLaunchedFromCli } from '../../platform/environment/node/argvHelper.js';
@@ -670,6 +671,28 @@ export class CodeApplication extends Disposable {
 		// Install URL handlers that deal with protocl URLs either
 		// from this process by opening windows and/or by forwarding
 		// the URLs into a window process to be handled there.
+
+		// RoboAgent: the browser sign-in callback (<urlProtocol>://auth/callback) goes to the auth
+		// service before any other handler, so its authorization code never reaches a window or the
+		// protocol-URL trace log below.
+		const roboagentAuthMainService = accessor.get(IRoboAgentAuthMainService);
+		if (roboagentAuthMainService instanceof RoboAgentAuthMainService) {
+			this._register(urlService.registerHandler(roboagentAuthMainService.signInCallbackHandler));
+		}
+		// RoboAgent: on Linux, make sure the desktop hands <urlProtocol>:// links to RoboAgent (the
+		// tarball and dev builds have no packaged URL-handler entry).
+		if (isLinux && !isLinuxSnap && this.productService.urlProtocol) {
+			const args = this.environmentMainService.args;
+			const target = urlSchemeTarget(this.productService, {
+				isBuilt: this.environmentMainService.isBuilt,
+				appRoot: this.environmentMainService.appRoot,
+				userDataDir: args['user-data-dir'] ? this.environmentMainService.userDataPath : undefined,
+				testRun: !!(args.extensionDevelopmentPath || args.extensionTestsPath),
+			}, process.execPath);
+			ensureLinuxUrlSchemeHandler(nodeUrlSchemeHost(), target).then(
+				result => this.logService.info(`RoboAgent: ${this.productService.urlProtocol}:// handler: ${result}`),
+				error => this.logService.warn(`RoboAgent: could not register the ${this.productService.urlProtocol}:// handler`, error));
+		}
 
 		const app = this;
 		urlService.registerHandler({

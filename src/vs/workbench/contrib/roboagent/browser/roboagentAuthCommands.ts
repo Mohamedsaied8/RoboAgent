@@ -6,7 +6,7 @@
 import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
-import { localize2 } from '../../../../nls.js';
+import { localize, localize2 } from '../../../../nls.js';
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
 import { ProxyChannel } from '../../../../base/parts/ipc/common/ipc.js';
 import { IRoboAgentAuthMainService } from '../../../../platform/roboagentAuth/common/roboagentAuthService.js';
@@ -14,6 +14,36 @@ import { INotificationService, Severity } from '../../../../platform/notificatio
 
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { URI } from '../../../../base/common/uri.js';
+
+/**
+ * Error text from the auth flow, made safe for a notification: notifications render Markdown
+ * links (including `command:` links), so brackets are dropped and the text cannot become one.
+ */
+export function plainNotificationText(message: string): string {
+	return message.replace(/[[\]]/g, '').slice(0, 300);
+}
+
+/**
+ * Run the browser sign-in with a progress notification whose Cancel really cancels it; the
+ * notification is closed however the sign-in ends. `failureMessage` formats the error.
+ */
+async function runBrowserSignIn(authService: IRoboAgentAuthMainService, notificationService: INotificationService, openingMessage: string, failureMessage: (error: string) => string): Promise<void> {
+	const progress = notificationService.prompt(Severity.Info, openingMessage, [{
+		label: localize('roboagent.signIn.cancel', "Cancel"),
+		run: () => { void authService.cancelSignIn(); }
+	}]);
+	try {
+		await authService.signIn();
+		notificationService.info(localize('roboagent.signIn.done', "Successfully signed in to RoboAgent!"));
+	} catch (e) {
+		const message = e instanceof Error ? e.message : String(e);
+		if (message !== 'Sign in aborted') {
+			notificationService.error(failureMessage(plainNotificationText(message)));
+		}
+	} finally {
+		progress.close();
+	}
+}
 
 export class SignInAction extends Action2 {
 	public static readonly ID = 'roboagent.signIn';
@@ -40,26 +70,9 @@ export class SignInAction extends Action2 {
 			return;
 		}
 
-		notificationService.prompt(
-			Severity.Info,
-			'Opening Robotics Corner in your browser — sign in there to continue...',
-			[{
-				label: 'Cancel',
-				run: () => {
-					// Rely on the main service's 5 min timeout.
-				}
-			}]
-		);
-
-		try {
-			await authService.signIn();
-			notificationService.info('Successfully signed in to RoboAgent!');
-		} catch (e) {
-			const message = e instanceof Error ? e.message : String(e);
-			if (message !== 'Sign in aborted') {
-				notificationService.error(`Sign in failed: ${message}`);
-			}
-		}
+		await runBrowserSignIn(authService, notificationService,
+			localize('roboagent.signIn.opening', "Opening Robotics Corner in your browser — sign in there to continue..."),
+			error => localize('roboagent.signIn.failed', "Sign in failed: {0}", error));
 	}
 }
 
@@ -87,26 +100,9 @@ export class SignUpAction extends Action2 {
 			return;
 		}
 
-		notificationService.prompt(
-			Severity.Info,
-			'Opening Robotics Corner in your browser — create your account there to continue...',
-			[{
-				label: 'Cancel',
-				run: () => {
-					// Rely on the main service's 5 min timeout.
-				}
-			}]
-		);
-
-		try {
-			await authService.signIn();
-			notificationService.info('Successfully signed in to RoboAgent!');
-		} catch (e) {
-			const message = e instanceof Error ? e.message : String(e);
-			if (message !== 'Sign in aborted') {
-				notificationService.error(`Sign up failed: ${message}`);
-			}
-		}
+		await runBrowserSignIn(authService, notificationService,
+			localize('roboagent.signUp.opening', "Opening Robotics Corner in your browser — create your account there to continue..."),
+			error => localize('roboagent.signUp.failed', "Sign up failed: {0}", error));
 	}
 }
 
@@ -139,7 +135,7 @@ export class SignOutAction extends Action2 {
 			await authService.signOut();
 			notificationService.info('Successfully signed out of RoboAgent (your browser session is unaffected).');
 		} catch (e) {
-			notificationService.error(`Sign out failed: ${e instanceof Error ? e.message : String(e)}`);
+			notificationService.error(`Sign out failed: ${plainNotificationText(e instanceof Error ? e.message : String(e))}`);
 		}
 	}
 }
